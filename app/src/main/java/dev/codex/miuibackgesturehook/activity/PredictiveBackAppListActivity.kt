@@ -36,12 +36,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -768,6 +768,7 @@ private fun PredictiveBackAppListScreen(
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
+                        .consumeWindowInsets(paddingValues)
                         .layerBackdrop(topBarBackdrop)
                         .scrollEndHaptic()
                         .overScrollVertical()
@@ -864,9 +865,6 @@ private fun PredictiveBackAppListScreen(
                                 },
                             )
                         }
-                    }
-                    item(key = "navigation_bar_spacer") {
-                        Spacer(modifier = Modifier.navigationBarsPadding())
                     }
                 }
             }
