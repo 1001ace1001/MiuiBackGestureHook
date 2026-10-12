@@ -19,6 +19,12 @@ The fullscreen back behavior dropdown shares a settings card with Side trigger a
 first immersive side gesture use the existing back pipeline, even if system bars appear
 during it. Changes apply to the next gesture without a restart.
 
+The HyperOS back indicator has an optional Advanced material switch, off by default.
+It uses Xiaomi's system material APIs within the live indicator silhouette, keeps the arrow
+sharp, and falls back to the original bitmap background when the APIs are unavailable or
+reject the request. Changes apply to the next gesture. The switch animates into view only
+when the HyperOS indicator style is selected.
+
 Android 16 uses the SystemUI gesture path. Android 17 keeps launcher-side
 ownership in the LSPosed native entry and fails closed if its page guard or
 validated native profile cannot be established.

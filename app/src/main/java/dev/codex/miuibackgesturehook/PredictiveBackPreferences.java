@@ -5,6 +5,8 @@ public final class PredictiveBackPreferences {
     public static final String KEY_PACKAGES = "packages";
     public static final String KEY_HYPEROS_INDICATOR = "hyperos_indicator_style";
     public static final boolean DEFAULT_HYPEROS_INDICATOR = false;
+    public static final String KEY_HYPEROS_INDICATOR_BLUR = "hyperos_indicator_blur";
+    public static final boolean DEFAULT_HYPEROS_INDICATOR_BLUR = false;
     public static final String KEY_HYPEROS_HAPTICS = "hyperos_indicator_haptics";
     public static final boolean DEFAULT_HYPEROS_HAPTICS = false;
     /** Only used to migrate the removed AOSP-specific switch once. */

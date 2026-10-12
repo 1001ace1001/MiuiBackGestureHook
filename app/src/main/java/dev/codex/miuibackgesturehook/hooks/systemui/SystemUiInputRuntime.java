@@ -691,6 +691,12 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                 PredictiveBackPreferences.DEFAULT_HYPEROS_HAPTICS);
     }
 
+    protected boolean isHyperOsIndicatorBlurEnabled() {
+        return readHyperOsBooleanPreference(
+                PredictiveBackPreferences.KEY_HYPEROS_INDICATOR_BLUR,
+                PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR);
+    }
+
     protected boolean isHyperOsHapticsEnhancedEnabled() {
         return readHyperOsBooleanPreference(
                 PredictiveBackPreferences.KEY_HYPEROS_HAPTICS_ENHANCED,
@@ -4521,7 +4527,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                                 }
                             });
                 }
-                return miuiStyleOverlay.prepare(edge);
+                return miuiStyleOverlay.prepare(edge, isHyperOsIndicatorBlurEnabled());
             } catch (Throwable throwable) {
                 moduleLog(Log.WARN, TAG, "Failed to prepare HyperOS-style indicator",
                         throwable);

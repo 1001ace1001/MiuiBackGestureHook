@@ -55,6 +55,8 @@
     <string name="back_indicator_style_aosp_summary">AOSP back indicator</string>
     <string name="back_indicator_style_hyperos">HyperOS</string>
     <string name="back_indicator_style_hyperos_summary">HyperOS back indicator</string>
+    <string name="hyperos_indicator_blur_title">Advanced material</string>
+    <string name="hyperos_indicator_blur_summary">Use system advanced materials to blur the indicator background.</string>
     <string name="haptic_feedback_effect_title">Haptic feedback effect</string>
     <string name="haptic_feedback_effect_aosp">AOSP</string>
     <string name="haptic_feedback_effect_aosp_summary">Use the native AOSP haptic effect</string>

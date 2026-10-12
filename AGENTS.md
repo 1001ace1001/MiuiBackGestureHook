@@ -533,6 +533,17 @@ Remote-animation rules:
   haptics. Avoid
   MiuiHome-process arrow paths and any other custom-drawn fallback except for
   native-indicator attachment diagnostics.
+- The optional HyperOS indicator material blur defaults off and depends on the HyperOS skin.
+  Reflect only the boot-framework Xiaomi View material APIs on a module-owned background child;
+  keep the arrow and bitmap fallback on an unblurred parent. Bound material with the live
+  bitmap's alpha silhouette and follow its existing gesture geometry and retract animation.
+  Use a display-wide, non-touchable sampling window only while material is requested;
+  recreate the ViewRoot when that preference changes and restore the bitmap window width.
+  Supply a rectangular native sampling Path and clip the child to the water-drop Outline.
+  Missing support, an unreadable interface or rejected native state preserves the bitmap skin;
+  never force system blur support or settings. Hide and clear the material child on setup failure,
+  zero-sized geometry, new gestures, window replacement and hot-reload detach. Preserve all
+  input, panel-state, commit and haptic ownership.
 - Restore `TYPE_RETURN_TO_HOME` through the standard Shell-to-launcher callback/runner
   registration. The confirmed entry is the Shell `IBackAnimation` binder in
   `LauncherProxyService`'s external-interface bundle; make MiuiHome consume that standard

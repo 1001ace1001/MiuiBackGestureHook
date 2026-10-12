@@ -17,6 +17,7 @@ import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material.icons.Icons
@@ -517,6 +518,12 @@ private fun PredictiveBackSettingsScreen(
     var saveError by remember { mutableStateOf<String?>(null) }
     var hyperOsIndicator by remember { mutableStateOf(false) }
     var confirmedHyperOsIndicator by remember { mutableStateOf(false) }
+    var hyperOsIndicatorBlur by remember {
+        mutableStateOf(PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR)
+    }
+    var confirmedHyperOsIndicatorBlur by remember {
+        mutableStateOf(PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR)
+    }
     var hyperOsHaptics by remember { mutableStateOf(false) }
     var confirmedHyperOsHaptics by remember { mutableStateOf(false) }
     var hyperOsHapticsEnhanced by remember { mutableStateOf(false) }
@@ -548,6 +555,8 @@ private fun PredictiveBackSettingsScreen(
         saveError = null
         hyperOsIndicator = false
         confirmedHyperOsIndicator = false
+        hyperOsIndicatorBlur = PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR
+        confirmedHyperOsIndicatorBlur = PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR
         hyperOsHaptics = false
         confirmedHyperOsHaptics = false
         hyperOsHapticsEnhanced = false
@@ -622,6 +631,10 @@ private fun PredictiveBackSettingsScreen(
                         PredictiveBackPreferences.KEY_FULLSCREEN_DIRECT_BACK,
                         PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK,
                     ),
+                    remotePreferences.getBoolean(
+                        PredictiveBackPreferences.KEY_HYPEROS_INDICATOR_BLUR,
+                        PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR,
+                    ),
                 )
                 remotePreferences to flags
             }
@@ -640,6 +653,8 @@ private fun PredictiveBackSettingsScreen(
             confirmedModuleLogging = loaded.second[5]
             fullscreenDirectBack = loaded.second[6]
             confirmedFullscreenDirectBack = loaded.second[6]
+            hyperOsIndicatorBlur = loaded.second[7]
+            confirmedHyperOsIndicatorBlur = loaded.second[7]
         } catch (_: Throwable) {
             configurationError = configurationErrorMessage
         } finally {
@@ -711,6 +726,15 @@ private fun PredictiveBackSettingsScreen(
             { hyperOsHaptics = it },
             { confirmedHyperOsHaptics },
             { confirmedHyperOsHaptics = it },
+        )
+    }
+    val persistHyperOsIndicatorBlur: (Boolean) -> Unit = { requestedEnabled ->
+        persistBooleanPreference(
+            PredictiveBackPreferences.KEY_HYPEROS_INDICATOR_BLUR,
+            requestedEnabled,
+            { hyperOsIndicatorBlur = it },
+            { confirmedHyperOsIndicatorBlur },
+            { confirmedHyperOsIndicatorBlur = it },
         )
     }
     val persistHyperOsHapticsEnhanced: (Boolean) -> Unit = { requestedEnabled ->
@@ -836,12 +860,14 @@ private fun PredictiveBackSettingsScreen(
             item(key = "hyperos_switches") {
                 HyperOsSwitchGroupCard(
                     hyperOsIndicator = hyperOsIndicator,
+                    hyperOsIndicatorBlur = hyperOsIndicatorBlur,
                     hyperOsHaptics = hyperOsHaptics,
                     hyperOsHapticsEnhanced = hyperOsHapticsEnhanced,
                     hyperOsSlideAnimation = hyperOsSlideAnimation,
                     oneUiCrossTaskAnimation = oneUiCrossTaskAnimation,
                     configurationEnabled = configurationEnabled,
                     onHyperOsIndicatorToggle = persistHyperOsIndicator,
+                    onHyperOsIndicatorBlurToggle = persistHyperOsIndicatorBlur,
                     onHyperOsHapticsToggle = persistHyperOsHaptics,
                     onHyperOsHapticsEnhancedToggle = persistHyperOsHapticsEnhanced,
                     onHyperOsSlideAnimationToggle = persistHyperOsSlideAnimation,
@@ -938,12 +964,14 @@ private fun cardAccentColor(severity: SettingsCardSeverity): Color = when (sever
 @Composable
 private fun HyperOsSwitchGroupCard(
     hyperOsIndicator: Boolean,
+    hyperOsIndicatorBlur: Boolean,
     hyperOsHaptics: Boolean,
     hyperOsHapticsEnhanced: Boolean,
     hyperOsSlideAnimation: Boolean,
     oneUiCrossTaskAnimation: Boolean,
     configurationEnabled: Boolean,
     onHyperOsIndicatorToggle: (Boolean) -> Unit,
+    onHyperOsIndicatorBlurToggle: (Boolean) -> Unit,
     onHyperOsHapticsToggle: (Boolean) -> Unit,
     onHyperOsHapticsEnhancedToggle: (Boolean) -> Unit,
     onHyperOsSlideAnimationToggle: (Boolean) -> Unit,
@@ -979,6 +1007,15 @@ private fun HyperOsSwitchGroupCard(
                 onHyperOsIndicatorToggle(selectedIndex == 1)
             },
         )
+        AnimatedVisibility(visible = hyperOsIndicator) {
+            SwitchPreference(
+                title = stringResource(R.string.hyperos_indicator_blur_title),
+                summary = stringResource(R.string.hyperos_indicator_blur_summary),
+                checked = hyperOsIndicatorBlur,
+                enabled = configurationEnabled && hyperOsIndicator,
+                onCheckedChange = onHyperOsIndicatorBlurToggle,
+            )
+        }
         WindowSpinnerPreference(
             items = listOf(
                 DropdownItem(
