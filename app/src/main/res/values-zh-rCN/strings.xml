@@ -84,6 +84,11 @@
     <string name="gesture_trigger_title">两侧触发区域</string>
     <string name="gesture_trigger_entry_title">两侧触发区域</string>
     <string name="gesture_trigger_entry_summary">调整左右两侧触发区域的高度和垂直位置</string>
+    <string name="fullscreen_back_behavior_title">全屏返回行为</string>
+    <string name="fullscreen_back_show_bars">先显示系统栏</string>
+    <string name="fullscreen_back_show_bars_summary">AOSP 默认：第一次手势显示导航栏和状态栏</string>
+    <string name="fullscreen_back_direct">直接返回</string>
+    <string name="fullscreen_back_direct_summary">与小米原厂手势一致，无需先用一次手势显示系统栏</string>
     <string name="gesture_trigger_height_title">区域高度</string>
     <string name="gesture_trigger_height_summary">左右两侧共用的触发区域高度</string>
     <string name="gesture_trigger_position_title">垂直位置</string>

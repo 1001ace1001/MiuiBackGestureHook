@@ -95,9 +95,59 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
     protected volatile MiuiHapticFeedbackHelper hyperOsBackHapticHelper;
     protected volatile SharedPreferences gestureTriggerPreferences;
     protected volatile boolean gestureTriggerPreferencesFailureLogged;
+    protected volatile SharedPreferences fullscreenBackPreferences;
+    protected volatile boolean fullscreenBackPreferencesFailureLogged;
     protected volatile SharedPreferences contextualSearchPreferences;
     protected volatile boolean contextualSearchPreferencesFailureLogged;
     protected volatile boolean contextualSearchServiceUnavailableLogged;
+
+    protected boolean isFullscreenDirectBackEnabled() {
+        try {
+            SharedPreferences preferences = fullscreenBackPreferences;
+            if (preferences == null) {
+                synchronized (this) {
+                    preferences = fullscreenBackPreferences;
+                    if (preferences == null) {
+                        preferences = getRemotePreferences(PredictiveBackPreferences.GROUP);
+                        fullscreenBackPreferences = preferences;
+                    }
+                }
+            }
+            boolean enabled = preferences.getBoolean(
+                    PredictiveBackPreferences.KEY_FULLSCREEN_DIRECT_BACK,
+                    PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK);
+            fullscreenBackPreferencesFailureLogged = false;
+            return enabled;
+        } catch (Throwable throwable) {
+            if (!fullscreenBackPreferencesFailureLogged) {
+                fullscreenBackPreferencesFailureLogged = true;
+                moduleLog(Log.WARN, TAG,
+                        "Fullscreen back preference unavailable; preserving AOSP policy",
+                        throwable);
+            }
+            return PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK;
+        }
+    }
+
+    /** Immutable ACTION_DOWN decision; preference changes apply to the next stream. */
+    protected static final class FullscreenBackPolicy {
+        final boolean directBack;
+        final boolean allowsBack;
+        final boolean yieldToTransientBars;
+
+        FullscreenBackPolicy(Long sysUiStateFlags, boolean navBarHidden,
+                boolean navBarShownTransiently, boolean authenticatedHeadlessLifecycle,
+                boolean directBackRequested) {
+            boolean readable = sysUiStateFlags != null;
+            boolean allowIgnoringBarVisibility = readable
+                    && (sysUiStateFlags.longValue()
+                    & SYSUI_STATE_ALLOW_GESTURE_IGNORING_BAR_VISIBILITY) != 0L;
+            directBack = readable && navBarHidden && directBackRequested;
+            allowsBack = !navBarHidden || allowIgnoringBarVisibility || directBack
+                    || (readable && authenticatedHeadlessLifecycle);
+            yieldToTransientBars = navBarHidden && !navBarShownTransiently && !directBack;
+        }
+    }
 
     protected boolean isContextualSearchLongPressEnabled() {
         try {
@@ -1520,16 +1570,24 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                     && !allowGestureIgnoringBarVisibility
                     && sysUiStateFlags != null
                     && isCurrentHeadlessNavBarLifecycle(edgeBackGestureHandler);
-            if (navBarHidden && !allowGestureIgnoringBarVisibility
-                    && !authenticatedHeadlessLifecycle) {
+            FullscreenBackPolicy fullscreenPolicy = new FullscreenBackPolicy(
+                    sysUiStateFlags, navBarHidden, navBarShownTransiently,
+                    authenticatedHeadlessLifecycle,
+                    navBarHidden && isFullscreenDirectBackEnabled());
+            if (!fullscreenPolicy.allowsBack) {
                 moduleLog(Log.INFO, TAG, "Ignored native back by AOSP bar-visibility policy"
                         + ", sysUiStateFlags=" + sysUiStateFlags
                         + ", edge=" + edge + ", x=" + event.getRawX()
                         + ", y=" + event.getRawY());
                 return false;
             }
-            waitingForTransientBarsAtDown = navBarHidden && !navBarShownTransiently;
-            if (navBarHidden && authenticatedHeadlessLifecycle
+            waitingForTransientBarsAtDown = fullscreenPolicy.yieldToTransientBars;
+            if (fullscreenPolicy.directBack) {
+                moduleLog(Log.INFO, TAG, "Accepted immersive back with direct-back preference"
+                        + ", sysUiStateFlags=" + sysUiStateFlags
+                        + ", edge=" + edge + ", x=" + event.getRawX()
+                        + ", y=" + event.getRawY());
+            } else if (navBarHidden && authenticatedHeadlessLifecycle
                     && !allowGestureIgnoringBarVisibility) {
                 moduleLog(Log.INFO, TAG,
                         "Accepted native back through authenticated headless lifecycle"

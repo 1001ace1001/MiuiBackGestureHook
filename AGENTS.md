@@ -135,9 +135,10 @@ system
 
 Android 17 launcher safety rule:
 
-- Keep `com.miui.home` in the static LSPosed scope only for Android 16 compatibility. On
-  Android 17 and newer, the module may be loaded because the scope list is static, but it must
-  register no MiuiHome-process LSPosed hooks. Cold package loading and hot-reload backfill must
+- Keep `com.miui.home` in the static LSPosed scope: Android 16 uses its launcher Java hooks,
+  and Android 17 and newer require it for LSPosed's HYOS-spawner native-entry loading.
+  On Android 17 and newer, register no MiuiHome-process Java LSPosed hooks.
+  Cold package loading and hot-reload backfill must
   both fail closed; hot reload from an older build must unhook every old MiuiHome handle instead
   of replacing it. Android 17 launcher-side research belongs to the APK's
   LSPosed native entry loaded through the framework's HYOS-spawner support.
@@ -282,7 +283,8 @@ Same-activity and input rules:
   Shell navigation. A vertical-leading sample remains pending so later horizontal motion can
   qualify; never terminal-cancel it on direction alone. Retain native `BackPanelController`
   dispatch and release-time invoke/cancel.
-- Apply AOSP's bar-visibility eligibility at `ACTION_DOWN`, before BackPanel, Shell, or pilfering.
+- By default, apply AOSP's bar-visibility eligibility at `ACTION_DOWN`, before BackPanel,
+  Shell, or pilfering.
   Snapshot the matching display's existing `SysUiState`: when `SYSUI_STATE_NAV_BAR_HIDDEN` is set
   and `SYSUI_STATE_ALLOW_GESTURE_IGNORING_BAR_VISIBILITY` (bit 17) is clear, leave the stream
   unclaimed for native display policy while a real NavigationBar or Taskbar owns transient-bar
@@ -295,8 +297,15 @@ Same-activity and input rules:
   module-started Shell gesture. When bit 17 is set, preserve the native threshold haptic and normal
   AOSP/Shell arbitration. Do not defer, suppress, or replay BackPanel haptics, and do not infer
   eligibility from the application, edge, timing, or gesture count.
-- If native display policy nevertheless shows the navigation bar transiently during an allowed
-  stream, cancel any module-started Shell gesture and do not also commit BACK.
+- In the default AOSP mode, if native display policy nevertheless shows the navigation bar
+  transiently during an allowed stream, cancel any module-started Shell gesture and do not
+  also commit BACK.
+- The explicit fullscreen direct-back preference may bypass only the hidden-navigation-bar
+  admission gate and transient-bar yield. Snapshot it at `ACTION_DOWN` only with readable,
+  display-matching native `SysUiState`; missing or malformed preferences preserve AOSP policy.
+  Keep accepted-DOWN authentication, native redirect/exclusion decisions, SystemUI lifecycle,
+  native panel thresholds and ordered Shell commit/cancel unchanged. Preference changes apply
+  to the next physical stream; do not force bar visibility or synthesize an extra BACK.
 - Preserve the current window-requested status-bar and navigation-bar appearance while those
   transient bars are shown; do not replace it with SystemUI's forced semi-transparent mode.
   If preserving that appearance leaves NavigationBar's transition mode unchanged, explicitly

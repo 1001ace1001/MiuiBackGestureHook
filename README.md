@@ -14,6 +14,11 @@ Optional integrations (off by default):
 - Google App full-screen Live Translate, with the platform screen-capture consent
   flow unchanged.
 
+The fullscreen back behavior dropdown shares a settings card with Side trigger area.
+“Show system bars first” preserves the default AOSP policy; “Go back directly” lets the
+first immersive side gesture use the existing back pipeline, even if system bars appear
+during it. Changes apply to the next gesture without a restart.
+
 Android 16 uses the SystemUI gesture path. Android 17 keeps launcher-side
 ownership in the LSPosed native entry and fails closed if its page guard or
 validated native profile cannot be established.
@@ -87,8 +92,9 @@ system
 ```
 
 The Google App scope is used only when Live Translate is enabled. On Android 17
-and newer, MiuiHome remains listed for compatibility, but it registers no Java
-launcher hooks; launcher work is owned by the LSPosed native entry.
+and newer, MiuiHome must remain in scope so LSPosed can load the native entry
+through its HYOS-spawner support. It registers no Java launcher hooks;
+launcher work is owned by the LSPosed native entry.
 
 API 102 hot reload is enabled with `autoHotReload=true`. The settings screen can
 refresh the authenticated SystemUI/native runtime status and resolved launcher profile.

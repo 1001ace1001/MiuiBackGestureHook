@@ -527,6 +527,12 @@ private fun PredictiveBackSettingsScreen(
     var confirmedOneUiCrossTaskAnimation by remember { mutableStateOf(false) }
     var moduleLogging by remember { mutableStateOf(true) }
     var confirmedModuleLogging by remember { mutableStateOf(true) }
+    var fullscreenDirectBack by remember {
+        mutableStateOf(PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK)
+    }
+    var confirmedFullscreenDirectBack by remember {
+        mutableStateOf(PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK)
+    }
     val writeMutex = remember(preferences) { Mutex() }
     val lazyListState = rememberLazyListState()
     val scrollBehavior = MiuixScrollBehavior()
@@ -552,6 +558,8 @@ private fun PredictiveBackSettingsScreen(
         confirmedOneUiCrossTaskAnimation = false
         moduleLogging = PredictiveBackPreferences.DEFAULT_MODULE_LOGGING
         confirmedModuleLogging = PredictiveBackPreferences.DEFAULT_MODULE_LOGGING
+        fullscreenDirectBack = PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK
+        confirmedFullscreenDirectBack = PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK
         if (!serviceStateObserved) {
             configurationLoading = true
             return@LaunchedEffect
@@ -610,6 +618,10 @@ private fun PredictiveBackSettingsScreen(
                         PredictiveBackPreferences.KEY_MODULE_LOGGING,
                         PredictiveBackPreferences.DEFAULT_MODULE_LOGGING,
                     ),
+                    remotePreferences.getBoolean(
+                        PredictiveBackPreferences.KEY_FULLSCREEN_DIRECT_BACK,
+                        PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK,
+                    ),
                 )
                 remotePreferences to flags
             }
@@ -626,6 +638,8 @@ private fun PredictiveBackSettingsScreen(
             confirmedOneUiCrossTaskAnimation = loaded.second[4]
             moduleLogging = loaded.second[5]
             confirmedModuleLogging = loaded.second[5]
+            fullscreenDirectBack = loaded.second[6]
+            confirmedFullscreenDirectBack = loaded.second[6]
         } catch (_: Throwable) {
             configurationError = configurationErrorMessage
         } finally {
@@ -733,6 +747,15 @@ private fun PredictiveBackSettingsScreen(
             { moduleLogging = it },
             { confirmedModuleLogging },
             { confirmedModuleLogging = it },
+        )
+    }
+    val persistFullscreenDirectBack: (Boolean) -> Unit = { requestedEnabled ->
+        persistBooleanPreference(
+            PredictiveBackPreferences.KEY_FULLSCREEN_DIRECT_BACK,
+            requestedEnabled,
+            { fullscreenDirectBack = it },
+            { confirmedFullscreenDirectBack },
+            { confirmedFullscreenDirectBack = it },
         )
     }
     val statusMessage = when {
@@ -846,12 +869,16 @@ private fun PredictiveBackSettingsScreen(
                         .padding(bottom = 8.dp),
                 )
             }
-            item(key = "gesture_trigger_navigation") {
-                GestureTriggerNavigationCard(
-                    onClick = onOpenGestureTriggerSettings,
+            item(key = "gesture_behavior") {
+                GestureBehaviorGroupCard(
+                    fullscreenDirectBack = fullscreenDirectBack,
+                    configurationEnabled = configurationEnabled,
+                    onFullscreenDirectBackToggle = persistFullscreenDirectBack,
+                    onOpenGestureTriggerSettings = onOpenGestureTriggerSettings,
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
-                        .padding(bottom = 8.dp),
+                        .padding(bottom = 8.dp)
+                        .fillMaxWidth(),
                 )
             }
             item(key = "app_list_navigation") {
@@ -1025,18 +1052,46 @@ private fun AppListNavigationCard(
 }
 
 @Composable
-private fun GestureTriggerNavigationCard(
-    onClick: () -> Unit,
+private fun GestureBehaviorGroupCard(
+    fullscreenDirectBack: Boolean,
+    configurationEnabled: Boolean,
+    onFullscreenDirectBackToggle: (Boolean) -> Unit,
+    onOpenGestureTriggerSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier,
         insideMargin = PaddingValues(0.dp),
     ) {
         ArrowPreference(
             title = stringResource(R.string.gesture_trigger_entry_title),
             summary = stringResource(R.string.gesture_trigger_entry_summary),
-            onClick = onClick,
+            onClick = onOpenGestureTriggerSettings,
+        )
+        WindowSpinnerPreference(
+            items = listOf(
+                DropdownItem(
+                    text = stringResource(R.string.fullscreen_back_show_bars),
+                    summary = stringResource(R.string.fullscreen_back_show_bars_summary),
+                ),
+                DropdownItem(
+                    text = stringResource(R.string.fullscreen_back_direct),
+                    summary = stringResource(R.string.fullscreen_back_direct_summary),
+                ),
+            ),
+            selectedIndex = if (fullscreenDirectBack) 1 else 0,
+            title = stringResource(R.string.fullscreen_back_behavior_title),
+            summary = stringResource(
+                if (fullscreenDirectBack) {
+                    R.string.fullscreen_back_direct_summary
+                } else {
+                    R.string.fullscreen_back_show_bars_summary
+                },
+            ),
+            enabled = configurationEnabled,
+            onSelectedIndexChange = { selectedIndex ->
+                onFullscreenDirectBackToggle(selectedIndex == 1)
+            },
         )
     }
 }

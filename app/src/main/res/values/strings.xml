@@ -86,6 +86,11 @@
     <string name="gesture_trigger_title">Side trigger area</string>
     <string name="gesture_trigger_entry_title">Side trigger area</string>
     <string name="gesture_trigger_entry_summary">Adjust the height and vertical position of both side trigger areas</string>
+    <string name="fullscreen_back_behavior_title">Fullscreen back behavior</string>
+    <string name="fullscreen_back_show_bars">Show system bars first</string>
+    <string name="fullscreen_back_show_bars_summary">AOSP default: the first gesture reveals the navigation and status bars</string>
+    <string name="fullscreen_back_direct">Go back directly</string>
+    <string name="fullscreen_back_direct_summary">Like Xiaomi gestures: go back without a separate gesture to reveal system bars</string>
     <string name="gesture_trigger_height_title">Area height</string>
     <string name="gesture_trigger_height_summary">Height shared by the left and right trigger areas</string>
     <string name="gesture_trigger_position_title">Vertical position</string>
