@@ -23,7 +23,8 @@ The HyperOS back indicator has an optional Advanced material switch, off by defa
 It uses Xiaomi's system material APIs within the live indicator silhouette, keeps the arrow
 sharp, and falls back to the original bitmap background when the APIs are unavailable or
 reject the request. Changes apply to the next gesture. The switch animates into view only
-when the HyperOS indicator style is selected.
+when the HyperOS indicator style is selected. The material uses a dark background in
+both light and dark system themes.
 
 Android 16 uses the SystemUI gesture path. Android 17 keeps launcher-side
 ownership in the LSPosed native entry and fails closed if its page guard or

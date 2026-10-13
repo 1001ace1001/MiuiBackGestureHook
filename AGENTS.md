@@ -539,7 +539,11 @@ Remote-animation rules:
   bitmap's alpha silhouette and follow its existing gesture geometry and retract animation.
   Use a display-wide, non-touchable sampling window only while material is requested;
   recreate the ViewRoot when that preference changes and restore the bitmap window width.
-  Supply a rectangular native sampling Path and clip the child to the water-drop Outline.
+  Supply a rectangular native sampling Path. Preserve the bitmap's fractional edge alpha
+  with a linear-filtered mask on an unblurred container around the background child;
+  do not threshold the silhouette or hard-clip it with an Outline.
+  Keep material tint and content wash dark in both system themes, paired with the original
+  launcher arrow. Preserve the bitmap fallback's resource colors and alpha animations.
   Missing support, an unreadable interface or rejected native state preserves the bitmap skin;
   never force system blur support or settings. Hide and clear the material child on setup failure,
   zero-sized geometry, new gestures, window replacement and hot-reload detach. Preserve all

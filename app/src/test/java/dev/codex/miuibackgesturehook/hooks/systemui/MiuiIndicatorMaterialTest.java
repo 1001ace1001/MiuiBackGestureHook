@@ -4,6 +4,7 @@ import android.graphics.Path;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -116,7 +117,7 @@ public final class MiuiIndicatorMaterialTest {
             MiuiIndicatorMaterial.resolve(FakeView.class, NonStaticRoot.class);
             fail("An instance support method is not the boot-framework contract");
         } catch (NoSuchMethodException expected) {
-            assertTrue(expected.getMessage().contains("static"));
+            assertTrue(Objects.requireNonNull(expected.getMessage()).contains("static"));
         }
     }
 

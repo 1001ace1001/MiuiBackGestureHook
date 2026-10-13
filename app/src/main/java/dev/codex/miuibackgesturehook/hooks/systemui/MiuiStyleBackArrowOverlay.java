@@ -9,22 +9,22 @@ import android.content.res.Configuration;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.BitmapShader;
+import android.graphics.BlendMode;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Matrix;
-import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.graphics.Region;
+import android.graphics.RenderEffect;
+import android.graphics.Shader;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewOutlineProvider;
 import android.view.WindowManager;
 import android.view.animation.DecelerateInterpolator;
 import android.view.animation.Interpolator;
@@ -79,10 +79,10 @@ final class MiuiStyleBackArrowOverlay {
     private Bitmap leftBackground;
     private Bitmap rightBackground;
     private Bitmap arrow;
-    private Path leftMaterialShape;
-    private Path rightMaterialShape;
+    private Bitmap leftMaterialMask;
+    private Bitmap rightMaterialMask;
     private boolean materialRequested;
-    private boolean materialShapeFailureLogged;
+    private boolean materialMaskFailureLogged;
     private int loadedDensityDpi = -1;
     private int loadedUiNightMode = -1;
     private boolean resourceFailureLogged;
@@ -142,7 +142,7 @@ final class MiuiStyleBackArrowOverlay {
         if (!loadResources()) {
             return false;
         }
-        materialRequested = blurEnabled && loadMaterialShapes();
+        materialRequested = blurEnabled && loadMaterialMasks();
         try {
             ensureWindow(edge);
             return view != null && windowAdded;
@@ -350,8 +350,8 @@ final class MiuiStyleBackArrowOverlay {
                     loadedBackground.getWidth(), loadedBackground.getHeight(),
                     rotate, true);
             arrow = loadedArrow;
-            leftMaterialShape = null;
-            rightMaterialShape = null;
+            leftMaterialMask = null;
+            rightMaterialMask = null;
             loadedDensityDpi = densityDpi;
             loadedUiNightMode = uiNightMode;
             resourceFailureLogged = false;
@@ -372,13 +372,13 @@ final class MiuiStyleBackArrowOverlay {
         }
     }
 
-    private boolean loadMaterialShapes() {
-        if (leftMaterialShape != null && rightMaterialShape != null) {
+    private boolean loadMaterialMasks() {
+        if (leftMaterialMask != null && rightMaterialMask != null) {
             return true;
         }
         try {
-            // Trace the live resource's alpha mask, including any holes, rather than
-            // substituting a hand-drawn approximation of Xiaomi's water drop.
+            // Keep the resource's fractional edge coverage. Thresholding it into a
+            // Region loses antialiasing and leaves a staircase around the material.
             int width = leftBackground.getWidth();
             int height = leftBackground.getHeight();
             if ((long) width * height > 2_000_000L) {
@@ -386,48 +386,21 @@ final class MiuiStyleBackArrowOverlay {
             }
             int[] pixels = new int[width * height];
             leftBackground.getPixels(pixels, 0, width, 0, 0, width, height);
-            int peakAlpha = 0;
-            for (int pixel : pixels) {
-                peakAlpha = Math.max(peakAlpha, Color.alpha(pixel));
-            }
-            if (peakAlpha == 0) {
-                throw new IllegalStateException("Indicator background has no visible silhouette");
-            }
-            int threshold = Math.max(1, (peakAlpha + 1) / 2);
-            Region region = new Region();
-            for (int y = 0; y < height; y++) {
-                int x = 0;
-                while (x < width) {
-                    while (x < width && Color.alpha(pixels[y * width + x]) < threshold) {
-                        x++;
-                    }
-                    int start = x;
-                    while (x < width && Color.alpha(pixels[y * width + x]) >= threshold) {
-                        x++;
-                    }
-                    if (start < x) {
-                        region.op(start, y, x, y + 1, Region.Op.UNION);
-                    }
-                }
-            }
-            Path left = region.getBoundaryPath();
-            if (left.isEmpty()) {
-                throw new IllegalStateException("Indicator material outline is empty");
-            }
+            MiuiIndicatorMask.normalizeAlpha(pixels);
+            Bitmap left = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888);
             Matrix mirror = new Matrix();
             mirror.setScale(-1.0f, -1.0f);
             mirror.postTranslate(width, height);
-            Path right = new Path(left);
-            right.transform(mirror);
-            leftMaterialShape = left;
-            rightMaterialShape = right;
-            materialShapeFailureLogged = false;
+            Bitmap right = Bitmap.createBitmap(left, 0, 0, width, height, mirror, true);
+            leftMaterialMask = left;
+            rightMaterialMask = right;
+            materialMaskFailureLogged = false;
             return true;
         } catch (Throwable throwable) {
-            if (!materialShapeFailureLogged) {
-                materialShapeFailureLogged = true;
+            if (!materialMaskFailureLogged) {
+                materialMaskFailureLogged = true;
                 logger.log(Log.WARN,
-                        "HyperOS indicator material outline unavailable; keeping bitmap",
+                        "HyperOS indicator material mask unavailable; keeping bitmap",
                         throwable);
             }
             return false;
@@ -622,10 +595,10 @@ final class MiuiStyleBackArrowOverlay {
                     (int) (startY - (expectBackHeight / 2.0f)),
                     backgroundRight,
                     (int) (startY + (expectBackHeight / 2.0f)));
-            Path materialShape = position == POSITION_LEFT
-                    ? overlay.leftMaterialShape : overlay.rightMaterialShape;
-            boolean materialVisible = materialView.updateMaterial(background,
-                    materialShape, backgroundDstRect, overlay.materialRequested);
+            Bitmap materialMask = position == POSITION_LEFT
+                    ? overlay.leftMaterialMask : overlay.rightMaterialMask;
+            boolean materialVisible = materialView.updateMaterial(
+                    materialMask, backgroundDstRect, overlay.materialRequested);
             super.dispatchDraw(canvas);
             if (!materialVisible) {
                 canvas.drawBitmap(background, null, backgroundDstRect, backgroundPaint);
@@ -693,8 +666,9 @@ final class MiuiStyleBackArrowOverlay {
         }
     }
 
-    private static final class MaterialView extends View {
+    private static final class MaterialView extends FrameLayout {
         private final MiuiStyleBackArrowOverlay overlay;
+        private final View background;
         private final Paint materialPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
         private final Rect lastBounds = new Rect();
         private final Matrix shapeMatrix = new Matrix();
@@ -703,33 +677,36 @@ final class MiuiStyleBackArrowOverlay {
         private boolean failedForGesture;
         private boolean failureLogged;
         private boolean configured;
-        private Path lastSourceShape;
-        private Path currentShape;
+        private Bitmap lastSourceMask;
+        private BitmapShader maskShader;
         private Path samplingShape;
 
         MaterialView(Context context, MiuiStyleBackArrowOverlay overlay) {
             super(context);
             this.overlay = overlay;
-            materialPaint.setColor(0x10FFFFFF);
+            // Xiaomi's indicator keeps a dark surface and a white arrow in both themes.
+            materialPaint.setColor(0x10000000);
             setVisibility(INVISIBLE);
             setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
-            setOutlineProvider(new ViewOutlineProvider() {
+            // The mask belongs to this unblurred container. Xiaomi may draw its
+            // background after a RenderEffect installed on the blur node itself.
+            background = new View(context) {
                 @Override
-                public void getOutline(View view, Outline outline) {
-                    if (currentShape == null) {
-                        outline.setEmpty();
-                    } else {
-                        outline.setPath(currentShape);
-                        outline.setAlpha(1.0f);
+                protected void onDraw(@NonNull Canvas canvas) {
+                    super.onDraw(canvas);
+                    if (configured && !lastBounds.isEmpty()) {
+                        canvas.drawRect(lastBounds, materialPaint);
                     }
                 }
-            });
-            setClipToOutline(true);
+            };
+            background.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+            addView(background, new FrameLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
         }
 
-        boolean updateMaterial(Bitmap bitmap, Path sourceShape, Rect bounds,
+        boolean updateMaterial(Bitmap sourceMask, Rect bounds,
                 boolean requested) {
-            if (!requested || sourceShape == null || bounds.isEmpty()) {
+            if (!requested || sourceMask == null || bounds.isEmpty()) {
                 releaseMaterial();
                 return false;
             }
@@ -747,36 +724,33 @@ final class MiuiStyleBackArrowOverlay {
                     failedForGesture = true;
                     return false;
                 }
-                boolean shapeChanged = currentShape == null
-                        || lastSourceShape != sourceShape || !lastBounds.equals(bounds);
+                boolean shapeChanged = maskShader == null
+                        || lastSourceMask != sourceMask || !lastBounds.equals(bounds);
                 if (shapeChanged) {
                     shapeMatrix.setRectToRect(
-                            new RectF(0, 0, bitmap.getWidth(), bitmap.getHeight()),
+                            new RectF(0, 0, sourceMask.getWidth(), sourceMask.getHeight()),
                             new RectF(bounds), Matrix.ScaleToFit.FILL);
-                    Path shape = new Path(sourceShape);
-                    shape.transform(shapeMatrix);
-                    Outline outline = new Outline();
-                    outline.setPath(shape);
-                    if (!outline.canClip()) {
-                        throw new IllegalStateException("Indicator silhouette cannot clip material");
+                    if (maskShader == null || lastSourceMask != sourceMask) {
+                        maskShader = new BitmapShader(sourceMask,
+                                Shader.TileMode.DECAL, Shader.TileMode.DECAL);
+                        maskShader.setFilterMode(BitmapShader.FILTER_MODE_LINEAR);
                     }
-                    currentShape = shape;
-                    // Xiaomi converts this API's Path into SkRRect for the material.
-                    // Keep it rectangular and clip the final node through its Outline.
+                    maskShader.setLocalMatrix(shapeMatrix);
+                    setRenderEffect(RenderEffect.createBlendModeEffect(
+                            RenderEffect.createOffsetEffect(0, 0),
+                            RenderEffect.createShaderEffect(maskShader), BlendMode.DST_IN));
+                    // Native sampling stays rectangular. The container masks the
+                    // complete child output, including Xiaomi's background draw.
                     samplingShape = new Path();
                     samplingShape.addRect(new RectF(bounds), Path.Direction.CW);
-                    lastSourceShape = sourceShape;
+                    lastSourceMask = sourceMask;
                     lastBounds.set(bounds);
-                    invalidateOutline();
                 }
                 if (!configured) {
-                    boolean dark = (getResources().getConfiguration().uiMode
-                            & Configuration.UI_MODE_NIGHT_MASK)
-                            == Configuration.UI_MODE_NIGHT_YES;
                     int radius = Math.min(400, Math.max(1, Math.round(
                             50.0f * getResources().getDisplayMetrics().density)));
-                    configured = api.enable(this, samplingShape, radius,
-                            dark ? 0x66000000 : 0x66FFFFFF);
+                    configured = api.enable(background, samplingShape, radius,
+                            0x99000000);
                     if (!configured) {
                         failedForGesture = true;
                         overlay.logger.log(Log.INFO,
@@ -785,10 +759,11 @@ final class MiuiStyleBackArrowOverlay {
                     }
                     failureLogged = false;
                 } else if (shapeChanged) {
-                    api.updatePath(this, samplingShape);
+                    api.updatePath(background, samplingShape);
                 }
                 setVisibility(VISIBLE);
                 if (shapeChanged) {
+                    background.invalidate();
                     invalidate();
                 }
                 return true;
@@ -813,10 +788,11 @@ final class MiuiStyleBackArrowOverlay {
 
         void releaseMaterial() {
             setVisibility(INVISIBLE);
+            setRenderEffect(null);
             if (configured) {
                 configured = false;
                 try {
-                    api.clear(this);
+                    api.clear(background);
                 } catch (Throwable throwable) {
                     if (!failureLogged) {
                         failureLogged = true;
@@ -825,19 +801,10 @@ final class MiuiStyleBackArrowOverlay {
                     }
                 }
             }
-            currentShape = null;
             samplingShape = null;
-            lastSourceShape = null;
+            lastSourceMask = null;
+            maskShader = null;
             lastBounds.setEmpty();
-            invalidateOutline();
-        }
-
-        @Override
-        protected void onDraw(@NonNull Canvas canvas) {
-            super.onDraw(canvas);
-            if (configured && currentShape != null) {
-                canvas.drawPath(currentShape, materialPaint);
-            }
         }
 
         @Override
