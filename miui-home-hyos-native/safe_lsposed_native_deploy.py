@@ -683,7 +683,9 @@ done
         allow_downgrade: bool = False,
         allow_failure: bool = False,
     ) -> CommandResult:
-        arguments = ["install", "-r"]
+        # Debug backups may be test-only. This applies to the rollback fallback
+        # too; omitting -t can strand the device on a failed candidate APK.
+        arguments = ["install", "-r", "-t"]
         if enable_rollback:
             arguments.extend(["--enable-rollback", "2"])
         if allow_downgrade:
