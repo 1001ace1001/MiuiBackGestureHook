@@ -81,6 +81,8 @@ final class MiuiStyleBackArrowOverlay {
     private Bitmap arrow;
     private Bitmap leftMaterialMask;
     private Bitmap rightMaterialMask;
+    private Bitmap leftMaterialStroke;
+    private Bitmap rightMaterialStroke;
     private boolean materialRequested;
     private boolean materialMaskFailureLogged;
     private int loadedDensityDpi = -1;
@@ -352,6 +354,8 @@ final class MiuiStyleBackArrowOverlay {
             arrow = loadedArrow;
             leftMaterialMask = null;
             rightMaterialMask = null;
+            leftMaterialStroke = null;
+            rightMaterialStroke = null;
             loadedDensityDpi = densityDpi;
             loadedUiNightMode = uiNightMode;
             resourceFailureLogged = false;
@@ -373,7 +377,8 @@ final class MiuiStyleBackArrowOverlay {
     }
 
     private boolean loadMaterialMasks() {
-        if (leftMaterialMask != null && rightMaterialMask != null) {
+        if (leftMaterialMask != null && rightMaterialMask != null
+                && leftMaterialStroke != null && rightMaterialStroke != null) {
             return true;
         }
         try {
@@ -386,14 +391,22 @@ final class MiuiStyleBackArrowOverlay {
             }
             int[] pixels = new int[width * height];
             leftBackground.getPixels(pixels, 0, width, 0, 0, width, height);
+            int[] strokePixels = pixels.clone();
+            MiuiIndicatorMask.isolateWhiteStroke(strokePixels);
+            Bitmap leftStroke = Bitmap.createBitmap(
+                    strokePixels, width, height, Bitmap.Config.ARGB_8888);
             MiuiIndicatorMask.normalizeAlpha(pixels);
             Bitmap left = Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888);
             Matrix mirror = new Matrix();
             mirror.setScale(-1.0f, -1.0f);
             mirror.postTranslate(width, height);
             Bitmap right = Bitmap.createBitmap(left, 0, 0, width, height, mirror, true);
+            Bitmap rightStroke = Bitmap.createBitmap(
+                    leftStroke, 0, 0, width, height, mirror, true);
             leftMaterialMask = left;
             rightMaterialMask = right;
+            leftMaterialStroke = leftStroke;
+            rightMaterialStroke = rightStroke;
             materialMaskFailureLogged = false;
             return true;
         } catch (Throwable throwable) {
@@ -451,8 +464,8 @@ final class MiuiStyleBackArrowOverlay {
             arrowPaint.setFilterBitmap(true);
             arrowPaint.setDither(true);
             arrowPaint.setAlpha(0);
-            // Only this child receives Xiaomi blur properties. The arrow and the
-            // bitmap fallback are drawn afterwards on the unblurred parent.
+            // Only this child receives Xiaomi blur properties. The stock white
+            // edge, arrow and bitmap fallback stay on the unblurred parent.
             materialView = new MaterialView(context, overlay);
             addView(materialView, new FrameLayout.LayoutParams(
                     LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
@@ -600,7 +613,11 @@ final class MiuiStyleBackArrowOverlay {
             boolean materialVisible = materialView.updateMaterial(
                     materialMask, backgroundDstRect, overlay.materialRequested);
             super.dispatchDraw(canvas);
-            if (!materialVisible) {
+            if (materialVisible) {
+                Bitmap stroke = position == POSITION_LEFT
+                        ? overlay.leftMaterialStroke : overlay.rightMaterialStroke;
+                canvas.drawBitmap(stroke, null, backgroundDstRect, backgroundPaint);
+            } else {
                 canvas.drawBitmap(background, null, backgroundDstRect, backgroundPaint);
             }
             if (arrowLit) {

@@ -27,4 +27,22 @@ public final class MiuiIndicatorMaskTest {
     public void fullyTransparentResourceCannotBecomeAnOpaqueRectangle() {
         MiuiIndicatorMask.normalizeAlpha(new int[] {0x00123456, 0x00FFFFFF});
     }
+
+    @Test
+    public void whiteStrokeKeepsOriginalAntialiasedOpacityAndRemovesBlackFill() {
+        int[] pixels = {0x00FFFFFF, 0x01FFFFFF, 0x26FFFFFF, 0xCC000000};
+        MiuiIndicatorMask.isolateWhiteStroke(pixels);
+        assertArrayEquals(new int[] {
+                0x00FFFFFF, 0x01FFFFFF, 0x26FFFFFF, 0x00FFFFFF
+        }, pixels);
+    }
+
+    @Test
+    public void mixedStrokeExtractsWhiteContributionWithoutAmplifyingResourceBrightness() {
+        int[] pixels = {0xCC303030, 0x80202020, 0xFF0000FF, 0xCC333234};
+        MiuiIndicatorMask.isolateWhiteStroke(pixels);
+        assertArrayEquals(new int[] {
+                0x26FFFFFF, 0x10FFFFFF, 0x00FFFFFF, 0x28FFFFFF
+        }, pixels);
+    }
 }

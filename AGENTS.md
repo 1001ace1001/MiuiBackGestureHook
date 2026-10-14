@@ -543,7 +543,9 @@ Remote-animation rules:
   with a linear-filtered mask on an unblurred container around the background child;
   do not threshold the silhouette or hard-clip it with an Outline.
   Keep material tint and content wash dark in both system themes, paired with the original
-  launcher arrow. Preserve the bitmap fallback's resource colors and alpha animations.
+  launcher arrow. Retain the live background bitmap's translucent white edge on the unblurred
+  parent, using its original brightness, fractional alpha and background destination rectangle.
+  Preserve the bitmap fallback's resource colors and alpha animations.
   Missing support, an unreadable interface or rejected native state preserves the bitmap skin;
   never force system blur support or settings. Hide and clear the material child on setup failure,
   zero-sized geometry, new gestures, window replacement and hot-reload detach. Preserve all
