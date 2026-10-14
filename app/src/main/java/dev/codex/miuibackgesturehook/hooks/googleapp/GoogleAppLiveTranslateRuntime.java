@@ -1,5 +1,6 @@
 package dev.codex.miuibackgesturehook.hooks.googleapp;
 
+import android.annotation.SuppressLint;
 import android.content.SharedPreferences;
 import android.util.Log;
 import java.lang.reflect.Constructor;
@@ -15,6 +16,7 @@ import org.luckypray.dexkit.result.MethodData;
 import org.luckypray.dexkit.result.MethodDataList;
 
 /** Google-owned Live Translate action and its feature-specific preferences. */
+@SuppressLint("PrivateApi")
 final class GoogleAppLiveTranslateRuntime {
     private static final String LIVE_TRANSLATE_SYSTEM_FEATURE =
             "com.google.android.feature.CONTEXTUAL_SEARCH_LIVE_TRANSLATE";

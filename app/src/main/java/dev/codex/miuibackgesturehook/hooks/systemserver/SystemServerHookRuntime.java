@@ -1,8 +1,6 @@
 package dev.codex.miuibackgesturehook.hooks.systemserver;
 
-import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
-import dev.codex.miuibackgesturehook.hooks.miuihome.MiuiHomeHookRuntime;
-
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
@@ -10,16 +8,18 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.graphics.Point;
 import android.graphics.Rect;
-import android.os.Bundle;
 import android.os.Binder;
-import android.os.IBinder;
 import android.os.Build;
-import android.os.Handler;
+import android.os.Bundle;
+import android.os.IBinder;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.SurfaceControl;
 import android.window.WindowOnBackInvokedDispatcher;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -31,11 +31,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
-
+import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
+import dev.codex.miuibackgesturehook.hooks.miuihome.MiuiHomeHookRuntime;
 import io.github.libxposed.api.XposedInterface;
 
+@SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
 public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
 
     protected static final int SERVER_CHANGE_INFO_BACK_TOP = 128;
@@ -366,7 +366,7 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
                     .invoke(null);
             Context context = application instanceof Context ? (Context) application : null;
             if (context == null) {
-                Object activityThread = activityThreadClass
+                    Object activityThread = activityThreadClass
                         .getDeclaredMethod("currentActivityThread")
                         .invoke(null);
                 if (activityThread != null) {
@@ -466,7 +466,7 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
 
     private Method resolvePredictiveBackOptInMethod(ClassLoader classLoader)
             throws Exception {
-        if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
             return WindowOnBackInvokedDispatcher.class.getDeclaredMethod(
                     "isOnBackInvokedCallbackEnabled", ActivityInfo.class,
                     ApplicationInfo.class, Supplier.class);
@@ -593,7 +593,7 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
     }
 
     protected void hookSecuritySidebarTransientBars(ClassLoader classLoader,
-            Set<String> existingHookIds) {
+                                                    Set<String> existingHookIds) {
         try {
             Class<?> policyClass = Class.forName(DISPLAY_POLICY, false, classLoader);
             int hooked = 0;
@@ -632,7 +632,7 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
 
     protected Object interceptSecuritySidebarTransientBars(XposedInterface.Chain chain)
             throws Throwable {
-        if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
             if (isAndroid17SecuritySidebarTransientRequest(chain)) {
                 moduleLog(Log.INFO, TAG,
                         "Blocked Android 17 transient bars from security sidebar handle"
@@ -891,7 +891,7 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
                 + selected.name() + ", classLoader=" + classLoader);
     }
 
-    protected SystemServerPlatformImpl requireSystemServerPlatformImpl(
+    private SystemServerPlatformImpl requireSystemServerPlatformImpl(
             ClassLoader classLoader) throws Exception {
         selectSystemServerPlatformImpl(classLoader);
         SystemServerPlatformImpl implementation = systemServerPlatformImpl;

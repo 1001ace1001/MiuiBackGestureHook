@@ -1,5 +1,6 @@
 package dev.codex.miuibackgesturehook.hooks.googleapp;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
@@ -10,6 +11,7 @@ import io.github.libxposed.api.XposedInterface;
 import org.luckypray.dexkit.DexKitBridge;
 
 /** Coordinates independent Google features without inheriting any process runtime. */
+@SuppressLint("DiscouragedPrivateApi")
 public final class GoogleAppRuntime {
     public static final String GOOGLE_APP = "com.google.android.googlequicksearchbox";
 

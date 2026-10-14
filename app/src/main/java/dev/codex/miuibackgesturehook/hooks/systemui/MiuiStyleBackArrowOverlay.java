@@ -41,6 +41,7 @@ import androidx.annotation.NonNull;
  * appearance stays pixel-identical to the stock HyperOS indicator. All entry points must
  * run on the main Looper except {@link #detach()}, which reposts itself.
  */
+@SuppressLint("DiscouragedApi")
 final class MiuiStyleBackArrowOverlay {
 
     interface Logger {
@@ -317,7 +318,6 @@ final class MiuiStyleBackArrowOverlay {
         return Gravity.TOP | (edge == EDGE_LEFT ? Gravity.LEFT : Gravity.RIGHT);
     }
 
-    @SuppressLint("DiscouragedApi")
     private boolean loadResources() {
         Configuration configuration = context.getResources().getConfiguration();
         int densityDpi = configuration.densityDpi;

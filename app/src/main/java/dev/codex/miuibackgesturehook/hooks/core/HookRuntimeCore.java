@@ -119,7 +119,6 @@ public abstract class HookRuntimeCore extends XposedModule {
     protected static final String SYSTEM_UI = "com.android.systemui";
     protected static final String MIUI_HOME = "com.miui.home";
     protected static final String MODULE_PACKAGE = NativeHookStatusProtocol.PACKAGE_NAME;
-    protected static final int ANDROID_17_API_LEVEL = 37;
     protected static final String WINDOW_ON_BACK_INVOKED_DISPATCHER =
             WindowOnBackInvokedDispatcher.class.getName();
     protected static final int APPLICATION_PREDICTIVE_BACK_ENABLE_FLAG = 0x8;
@@ -602,7 +601,7 @@ public abstract class HookRuntimeCore extends XposedModule {
      * libxposed does not provide a platform-conditional scope list.
      */
     protected static boolean blockMiuiHomeXposedHooks() {
-        return Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL;
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN;
     }
 
     protected static boolean isMiuiHomeProcess(String candidate) {

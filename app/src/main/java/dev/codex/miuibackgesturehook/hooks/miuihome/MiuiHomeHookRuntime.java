@@ -1,7 +1,5 @@
 package dev.codex.miuibackgesturehook.hooks.miuihome;
 
-import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
-
 import android.annotation.SuppressLint;
 import android.app.BroadcastOptions;
 import android.app.KeyguardManager;
@@ -14,15 +12,15 @@ import android.content.SharedPreferences;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Region;
-import android.os.Bundle;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.IInterface;
 import android.os.Looper;
 import android.os.Process;
-import android.util.Log;
 import android.util.DisplayMetrics;
+import android.util.Log;
 import android.view.Display;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -42,8 +40,10 @@ import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
 import io.github.libxposed.api.XposedInterface;
 
+@SuppressLint("PrivateApi")
 public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
     protected final Object miuiHomeGestureTriggerPreferenceLock = new Object();
     protected final Object miuiHomeGestureTriggerStubLock = new Object();
@@ -54,13 +54,13 @@ public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
     protected volatile boolean miuiHomeGestureTriggerTouchRegionFailureLogged;
     protected final SharedPreferences.OnSharedPreferenceChangeListener
             miuiHomeGestureTriggerPreferenceListener = (preferences, key) -> {
-                if (!PredictiveBackPreferences.KEY_GESTURE_TRIGGER_HEIGHT_PERCENT.equals(key)
-                        && !PredictiveBackPreferences.KEY_GESTURE_TRIGGER_POSITION_PERCENT
-                        .equals(key)) {
-                    return;
-                }
-                refreshMiuiHomeGestureTriggerStubs("preference:" + key);
-            };
+        if (!PredictiveBackPreferences.KEY_GESTURE_TRIGGER_HEIGHT_PERCENT.equals(key)
+                && !PredictiveBackPreferences.KEY_GESTURE_TRIGGER_POSITION_PERCENT
+                .equals(key)) {
+            return;
+        }
+        refreshMiuiHomeGestureTriggerStubs("preference:" + key);
+    };
 
     protected void hookMiuiHomeGestureStubTriggerRegion(Class<?> gestureStubClass)
             throws NoSuchMethodException {
@@ -3373,7 +3373,7 @@ public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
 
     protected void publishLegacyRuntimeStatusReply(Context context, Intent query,
                                                    long generation) {
-        if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                 || context == null || query == null || generation <= 0L
                 || !query.getBooleanExtra(EXTRA_STATUS_QUERY, false)) {
             return;

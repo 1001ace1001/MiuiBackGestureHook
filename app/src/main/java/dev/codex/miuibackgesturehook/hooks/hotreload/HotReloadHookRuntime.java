@@ -1,6 +1,10 @@
 package dev.codex.miuibackgesturehook.hooks.hotreload;
 
+import static dev.codex.miuibackgesturehook.hooks.googleapp.GoogleAppRuntime.GOOGLE_APP;
+
 import android.content.Context;
+import android.content.SharedPreferences;
+import android.annotation.SuppressLint;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -9,30 +13,42 @@ import android.os.SystemClock;
 import android.util.Log;
 
 import java.lang.reflect.Executable;
-import android.content.SharedPreferences;
-import static dev.codex.miuibackgesturehook.hooks.googleapp.GoogleAppRuntime.GOOGLE_APP;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 
-import dev.codex.miuibackgesturehook.hooks.systemserver.SystemServerHookRuntime;
 import dev.codex.miuibackgesturehook.hooks.googleapp.GoogleAppRuntime;
+import dev.codex.miuibackgesturehook.hooks.systemserver.SystemServerHookRuntime;
 import io.github.libxposed.api.XposedInterface;
 import io.github.libxposed.api.XposedModuleInterface;
 
+@SuppressLint("PrivateApi")
 public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
 
     private final GoogleAppRuntime googleApp = new GoogleAppRuntime(new GoogleAppRuntime.Host() {
-        @Override public void install(Executable executable, String id, XposedInterface.Hooker hooker) {
+        @Override
+        public void install(Executable executable, String id, XposedInterface.Hooker hooker) {
             recordHookHandle(hook(executable).setId(id).intercept(hooker));
         }
-        @Override public boolean deoptimize(Executable executable) {
+
+        @Override
+        public boolean deoptimize(Executable executable) {
             return HotReloadHookRuntime.this.deoptimize(executable);
         }
-        @Override public SharedPreferences preferences(String group) { return getRemotePreferences(group); }
-        @Override public void ensureDexKit() { ensureDexKitLibraryLoaded(); }
-        @Override public void log(int priority, String message, Throwable failure) {
+
+        @Override
+        public SharedPreferences preferences(String group) {
+            return getRemotePreferences(group);
+        }
+
+        @Override
+        public void ensureDexKit() {
+            ensureDexKitLibraryLoaded();
+        }
+
+        @Override
+        public void log(int priority, String message, Throwable failure) {
             if (failure == null) moduleLog(priority, TAG, message);
             else moduleLog(priority, TAG, message, failure);
         }
@@ -1067,7 +1083,7 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                     pendingHotReloadHeadlessState = (Object[][]) state[12];
                 }
                 if (state.length >= 14) {
-                    miuiLauncherEditing = Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL
+                    miuiLauncherEditing = Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN
                             && Boolean.TRUE.equals(state[13]);
                 }
                 if (state.length >= 15) {
@@ -1152,15 +1168,19 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
         moduleLog(Log.INFO, TAG, "Package loaded: " + loadedPackage
                 + ", classLoader=" + param.getDefaultClassLoader()
                 + ", sourceDir=" + param.getApplicationInfo().sourceDir);
-        if (SYSTEM_UI.equals(loadedPackage)) {
-            installSystemUiHooks(param.getDefaultClassLoader());
-        } else if (MIUI_HOME.equals(loadedPackage)) {
-            installMiuiHomeHooks(param.getDefaultClassLoader());
-        } else if (GOOGLE_APP.equals(loadedPackage)) {
-            googleApp.install(
-                    param.getDefaultClassLoader(),
-                    param.getApplicationInfo().sourceDir,
-                    Collections.emptySet());
+        switch (loadedPackage) {
+            case SYSTEM_UI:
+                installSystemUiHooks(param.getDefaultClassLoader());
+                break;
+            case MIUI_HOME:
+                installMiuiHomeHooks(param.getDefaultClassLoader());
+                break;
+            case GOOGLE_APP:
+                googleApp.install(
+                        param.getDefaultClassLoader(),
+                        param.getApplicationInfo().sourceDir,
+                        Collections.emptySet());
+                break;
         }
     }
 

@@ -1,5 +1,6 @@
 package dev.codex.miuibackgesturehook.hooks.miuihome;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Matrix;
 import android.graphics.Rect;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
 
+@SuppressLint("PrivateApi")
 abstract class MiuiHomeReturnHomeUnifiedRuntime
         extends MiuiHomeReturnHomePreviewRuntime {
     protected abstract class ReturnHomeUnifiedController

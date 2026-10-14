@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 package dev.codex.miuibackgesturehook.hooks.systemui;
 
+import android.annotation.SuppressLint;
 import android.graphics.Path;
 import android.view.View;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
-/** Boot-framework Xiaomi material APIs, resolved once for an owned background View. */
+/**
+ * Boot-framework Xiaomi material APIs, resolved once for an owned background View.
+ */
+@SuppressLint("PrivateApi")
 final class MiuiIndicatorMaterial {
-    private MiuiIndicatorMaterial() {}
+    private MiuiIndicatorMaterial() {
+    }
 
     static Api resolve() throws ReflectiveOperationException {
         return resolve(View.class, Class.forName("android.view.ViewRootImpl", false,
@@ -38,7 +43,7 @@ final class MiuiIndicatorMaterial {
     }
 
     private static Method method(Class<?> type, String name, Class<?> result,
-            Class<?>... arguments) throws ReflectiveOperationException {
+                                 Class<?>... arguments) throws ReflectiveOperationException {
         Method method = type.getDeclaredMethod(name, arguments);
         if (method.getReturnType() != result) {
             throw new NoSuchMethodException("Unexpected return type for " + name);
@@ -63,10 +68,10 @@ final class MiuiIndicatorMaterial {
         private final Method radiusValue;
 
         private Api(Method supported, Method path, Method pass, Method windowSampling,
-                Method backgroundMode,
-                Method viewMode, Method radius, Method blend, Method clearBlend,
-                Method passEnabled, Method backgroundModeValue,
-                Method viewModeValue, Method radiusValue) {
+                    Method backgroundMode,
+                    Method viewMode, Method radius, Method blend, Method clearBlend,
+                    Method passEnabled, Method backgroundModeValue,
+                    Method viewModeValue, Method radiusValue) {
             this.supported = supported;
             this.path = path;
             this.pass = pass;

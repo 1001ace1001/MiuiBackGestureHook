@@ -1,9 +1,11 @@
 package dev.codex.miuibackgesturehook.hooks.systemui;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Rect;
 import android.os.Handler;
 
+@SuppressLint("PrivateApi")
 final class SystemUiAndroid16Impl extends SystemUiPlatformImpl {
     @Override
     String name() {

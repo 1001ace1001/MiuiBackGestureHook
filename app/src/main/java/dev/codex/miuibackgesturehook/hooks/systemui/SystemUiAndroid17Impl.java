@@ -1,6 +1,7 @@
 package dev.codex.miuibackgesturehook.hooks.systemui;
 
 import android.animation.Animator;
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.content.res.Resources;
@@ -20,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
+@SuppressLint({"PrivateApi", "DiscouragedPrivateApi", "DiscouragedApi"})
 final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     private final Map<Object, Object> modulePlugins =
             Collections.synchronizedMap(new WeakHashMap<>());
@@ -237,7 +239,8 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
 
     private int resolveAndroidColor(Context context, String name,
                                     String fallbackName) {
-        int colorId = context.getResources().getIdentifier(name, "color", "android");
+        int colorId = context.getResources().getIdentifier(
+                name, "color", "android");
         if (colorId == 0 && !name.equals(fallbackName)) {
             colorId = context.getResources().getIdentifier(
                     fallbackName, "color", "android");

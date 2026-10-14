@@ -1,13 +1,8 @@
 package dev.codex.miuibackgesturehook.hooks.systemui;
 
-import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
-import dev.codex.miuibackgesturehook.hooks.core.HookRuntimeCore;
-
 import android.annotation.SuppressLint;
-import android.animation.Animator;
 import android.app.ActivityManager;
 import android.app.KeyguardManager;
-import android.media.AudioAttributes;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -18,6 +13,7 @@ import android.content.pm.ResolveInfo;
 import android.graphics.Rect;
 import android.graphics.Region;
 import android.hardware.input.InputManager;
+import android.media.AudioAttributes;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -26,7 +22,6 @@ import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.provider.Settings;
 import android.util.Log;
-import android.util.Pair;
 import android.view.Display;
 import android.view.InputChannel;
 import android.view.InputEvent;
@@ -41,6 +36,9 @@ import android.window.BackMotionEvent;
 import android.window.BackNavigationInfo;
 import android.window.BackTouchTracker;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Collections;
@@ -53,25 +51,32 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.json.JSONArray;
-import org.json.JSONObject;
+import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
+import dev.codex.miuibackgesturehook.hooks.core.HookRuntimeCore;
 
 
+@SuppressLint({"PrivateApi", "DiscouragedApi"})
 public abstract class SystemUiInputRuntime extends HookRuntimeCore {
     protected abstract void sendAuthenticatedMiuiHomeOpenBreakCommand(
             Context context, long generation, long attemptId,
             SystemUiBackGestureDriver driver, Object releaseController);
+
     protected abstract void publishSystemUiReturnHomeFinish(
             Object controller, long shellSessionId,
             Object finishCallback, String reason);
+
     protected abstract Object findNativeEdgeBackPlugin(
             Object edgeBackGestureHandler) throws Exception;
+
     protected abstract void prepareNativeBackPanel(
             Object edgeBackGestureHandler, Object plugin) throws Exception;
+
     protected abstract void updateNativeBackPanelDisplaySize(
             Object edgeBackGestureHandler, Object plugin) throws Exception;
+
     protected abstract boolean isNavigationOverlayExcluded(
             Object edgeBackGestureHandler, int x, int y) throws Exception;
+
     protected abstract void injectPlatformLegacyBackKey(
             Object controller, int displayId) throws Exception;
 
@@ -85,7 +90,9 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
             Collections.synchronizedMap(new WeakHashMap<>());
     protected final Map<Object, ContextualSearchInputReceiver> contextualSearchInputReceivers =
             Collections.synchronizedMap(new WeakHashMap<>());
-    /** NavigationBar instances remain discoverable while the Android 16 switch is disabled. */
+    /**
+     * NavigationBar instances remain discoverable while the Android 16 switch is disabled.
+     */
     protected final Set<Object> contextualSearchNavigationBars =
             Collections.newSetFromMap(new WeakHashMap<>());
     protected volatile Object[] pendingHotReloadContextualSearchNavigationBars = new Object[0];
@@ -129,15 +136,17 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
     }
 
-    /** Immutable ACTION_DOWN decision; preference changes apply to the next stream. */
+    /**
+     * Immutable ACTION_DOWN decision; preference changes apply to the next stream.
+     */
     protected static final class FullscreenBackPolicy {
         final boolean directBack;
         final boolean allowsBack;
         final boolean yieldToTransientBars;
 
         FullscreenBackPolicy(Long sysUiStateFlags, boolean navBarHidden,
-                boolean navBarShownTransiently, boolean authenticatedHeadlessLifecycle,
-                boolean directBackRequested) {
+                             boolean navBarShownTransiently, boolean authenticatedHeadlessLifecycle,
+                             boolean directBackRequested) {
             boolean readable = sysUiStateFlags != null;
             boolean allowIgnoringBarVisibility = readable
                     && (sysUiStateFlags.longValue()
@@ -188,11 +197,12 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
             contextualSearchServiceUnavailableLogged = false;
             return false;
         }
-        if (Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN) {
             return true;
         }
         try {
-            Class<?> serviceManagerClass = Class.forName("android.os.ServiceManager");
+            Class<?> serviceManagerClass = Class.forName(
+                    "android.os.ServiceManager");
             Object binderObject = serviceManagerClass
                     .getMethod("getService", String.class)
                     .invoke(null, "contextual_search");
@@ -250,7 +260,9 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
     }
 
-    /** MiCTS-compatible click feedback, emitted only after native CTS succeeds. */
+    /**
+     * MiCTS-compatible click feedback, emitted only after native CTS succeeds.
+     */
     @SuppressLint("MissingPermission") // Runs inside SystemUI, which owns VIBRATE.
     protected boolean playContextualSearchHaptic(Context context) {
         if (context == null || !isContextualSearchHapticsEnabled()) {
@@ -419,7 +431,8 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
             return false;
         }
         try {
-            Class<?> serviceManagerClass = Class.forName("android.os.ServiceManager");
+            Class<?> serviceManagerClass = Class.forName(
+                    "android.os.ServiceManager");
             Object binderObject = serviceManagerClass
                     .getMethod("getService", String.class)
                     .invoke(null, "contextual_search");
@@ -847,7 +860,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
     }
 
     protected NativeBackInputMonitor createNativeBackInputMonitor(Context context,
-                                                                 Object edgeBackGestureHandler, Object controller, Object backAnimationImpl)
+                                                                  Object edgeBackGestureHandler, Object controller, Object backAnimationImpl)
             throws Exception {
         InputManager inputManager = context.getSystemService(InputManager.class);
         int displayId = readIntFieldOrDefault(
@@ -922,8 +935,8 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         protected MotionEvent pendingMotionEvent;
 
         protected NativeBackInputMonitor(Context context, Object edgeBackGestureHandler,
-                                       Object controller, Object backAnimationImpl, InputMonitor inputMonitor,
-                                       InputChannel inputChannel, int displayId)
+                                         Object controller, Object backAnimationImpl, InputMonitor inputMonitor,
+                                         InputChannel inputChannel, int displayId)
                 throws Exception {
             super(inputChannel, Looper.getMainLooper());
             this.context = context;
@@ -1020,7 +1033,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         protected boolean handleMotionEvent(MotionEvent event) {
             int action = event.getActionMasked();
             if (action != MotionEvent.ACTION_DOWN && gestureCandidate
-                    && Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                     && downLauncherStateOwnerEpoch > 0L
                     && downLauncherStateOwnerEpoch
                     != miuiLauncherDartStateOwnerEpoch) {
@@ -1208,7 +1221,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                     && gestureCandidate
                     && !miuiHomeInputAccepted
                     && token.generation == systemUiInputArbiterGeneration
-                    && (Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL
+                    && (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN
                     || (token.launcherStateOwnerEpoch > 0L
                     && token.launcherStateOwnerEpoch
                     == downLauncherStateOwnerEpoch))
@@ -1451,7 +1464,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                     && !launcherShade
                     && miuiLauncherXiaoAiVisible;
             boolean launcherHomeSurface = launcherHome && displayId == 0
-                    && Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                    && Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                     && !launcherShade && !launcherXiaoAi && !miuiOverviewVisible
                     && miuiLauncherHomeSurfaceVisible;
             boolean launcherOpenBreak = displayId == 0
@@ -1476,7 +1489,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                     && !launcherOpenBreak
                     && !launcherDrawer;
             boolean launcherEditing = launcherHome
-                    && Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL
+                    && Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN
                     && !launcherShade
                     && !launcherXiaoAi
                     && miuiLauncherEditing
@@ -2221,7 +2234,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected boolean executeShellBlocking(Executor executor, Runnable task,
-                                             String reason) {
+                                               String reason) {
             try {
                 invokeAnyMethod(executor, "executeBlocking",
                         new Object[]{task});
@@ -2264,12 +2277,12 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected boolean handleTouch(MotionEvent event, int edge,
-                                    boolean launcherOpenBreakCandidate,
-                                    long launcherOpenBreakGenerationCandidate,
-                                    boolean launcherShadeCandidate,
-                                    boolean launcherXiaoAiCandidate,
-                                    boolean launcherDrawerCandidate,
-                                    boolean launcherEditingCandidate) {
+                                      boolean launcherOpenBreakCandidate,
+                                      long launcherOpenBreakGenerationCandidate,
+                                      boolean launcherShadeCandidate,
+                                      boolean launcherXiaoAiCandidate,
+                                      boolean launcherDrawerCandidate,
+                                      boolean launcherEditingCandidate) {
             try {
                 switch (event.getActionMasked()) {
                     case MotionEvent.ACTION_DOWN:
@@ -2347,12 +2360,12 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected boolean onDown(MotionEvent event, int edge,
-                               boolean launcherOpenBreakCandidate,
-                               long launcherOpenBreakGenerationCandidate,
-                               boolean launcherShadeCandidate,
-                               boolean launcherXiaoAiCandidate,
-                               boolean launcherDrawerCandidate,
-                               boolean launcherEditingCandidate) throws Exception {
+                                 boolean launcherOpenBreakCandidate,
+                                 long launcherOpenBreakGenerationCandidate,
+                                 boolean launcherShadeCandidate,
+                                 boolean launcherXiaoAiCandidate,
+                                 boolean launcherDrawerCandidate,
+                                 boolean launcherEditingCandidate) throws Exception {
             clearLegacyBackGuard("newPhysicalGesture");
             gestureActive = true;
             shellGestureStarted = false;
@@ -2722,14 +2735,14 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                     releaseInputIdentity);
             moduleLog(queued ? Log.INFO : Log.ERROR, TAG,
                     "SystemUI gesture driver release queued=" + queued
-                    + ", releaseAllowed=" + releaseAllowed
-                    + ", recentsShellCallback=" + launcherOverviewGesture
-                    + ", shadeShellCallback=" + launcherShadeGesture
-                    + ", drawerOrFolderShellCallback=" + launcherDrawerGesture
-                    + ", editingShellCallback=" + launcherEditingGesture
-                    + ", aospNullNavigation=" + aospNullNavigationGesture
-                    + ", shellSessionId=" + session.id
-                    + ", edge=" + activeEdge);
+                            + ", releaseAllowed=" + releaseAllowed
+                            + ", recentsShellCallback=" + launcherOverviewGesture
+                            + ", shadeShellCallback=" + launcherShadeGesture
+                            + ", drawerOrFolderShellCallback=" + launcherDrawerGesture
+                            + ", editingShellCallback=" + launcherEditingGesture
+                            + ", aospNullNavigation=" + aospNullNavigationGesture
+                            + ", shellSessionId=" + session.id
+                            + ", edge=" + activeEdge);
             clearLocalGestureState();
             return true;
         }
@@ -2796,7 +2809,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected boolean finishLauncherOpenBreakGesture(MotionEvent event,
-                                                       boolean allowTrigger)
+                                                         boolean allowTrigger)
                 throws Exception {
             String panelStateBeforeRelease = readNativePanelState();
             boolean panelReleaseDelivered =
@@ -2860,8 +2873,8 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         public void onLauncherOpenBreakCommandResult(long generation, long attemptId,
-                                                       int resultCode, String reason,
-                                                       Object releaseController) {
+                                                     int resultCode, String reason,
+                                                     Object releaseController) {
             if (pendingLauncherOpenBreakGeneration != generation
                     || pendingLauncherOpenBreakAttemptId != attemptId) {
                 moduleLog(Log.WARN, TAG, "Ignored stale launcher OPEN break command result"
@@ -3116,7 +3129,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
             ShellGestureSession session = new ShellGestureSession(
                     owner, start, startEdge, startX, startY, linearDistance,
                     maxDistance, nonLinearFactor, acceptedInputIdentity);
-            if (!publishShellGestureSession(session)) {
+            if (publishShellGestureSession(session)) {
                 shellOwnerUncertain = true;
                 shellStartInFlight = false;
                 cancelUnpublishedShellSession(session,
@@ -3263,11 +3276,11 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                 ShellGestureSession session) {
             synchronized (backInputLifecycleLock) {
                 if (activeShellSession != null) {
-                    return false;
+                    return true;
                 }
                 activeShellSession = session;
                 shellOwnerUncertain = false;
-                return true;
+                return false;
             }
         }
 
@@ -3303,7 +3316,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                 return;
             }
             if (activeShellSession != session
-                    && !publishShellGestureSession(session)) {
+                    && publishShellGestureSession(session)) {
                 shellStartInFlight = false;
                 cancelUnpublishedShellSession(session,
                         "abandonedStartCollision");
@@ -3442,7 +3455,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                     && expectedInputMonitorEpoch == inputMonitorEpoch.get()
                     && expectedController == controller
                     && inputIdentity.generation == systemUiInputArbiterGeneration
-                    && (Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL
+                    && (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN
                     || (inputIdentity.launcherStateOwnerEpoch > 0L
                     && inputIdentity.launcherStateOwnerEpoch
                     == miuiLauncherDartStateOwnerEpoch))
@@ -3526,24 +3539,24 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                                     "mBackAnimationFinishedCallback");
                             boolean resetNavigationLost =
                                     currentAfterFinish == session.tracker
-                                    && queuedAfterFinish == currentTracker
-                                    && readField(finishedController,
-                                    "mBackNavigationInfo") == null
-                                    && isTrackerInitial(currentAfterFinish)
-                                    && isTrackerInitial(queuedAfterFinish)
-                                    && !Boolean.TRUE.equals(readField(
-                                    finishedController,
-                                    "mPostCommitAnimationInProgress"))
-                                    && !Boolean.TRUE.equals(readField(
-                                    finishedController,
-                                    "mBackGestureStarted"))
-                                    && !Boolean.TRUE.equals(readField(
-                                    finishedController,
-                                    "mReceivedNullNavigationInfo"))
-                                    && animationFinishedCallback != null
-                                    && session.tracker instanceof BackTouchTracker
-                                    && !((BackTouchTracker) session.tracker)
-                                    .getTriggerBack();
+                                            && queuedAfterFinish == currentTracker
+                                            && readField(finishedController,
+                                            "mBackNavigationInfo") == null
+                                            && isTrackerInitial(currentAfterFinish)
+                                            && isTrackerInitial(queuedAfterFinish)
+                                            && !Boolean.TRUE.equals(readField(
+                                            finishedController,
+                                            "mPostCommitAnimationInProgress"))
+                                            && !Boolean.TRUE.equals(readField(
+                                            finishedController,
+                                            "mBackGestureStarted"))
+                                            && !Boolean.TRUE.equals(readField(
+                                            finishedController,
+                                            "mReceivedNullNavigationInfo"))
+                                            && animationFinishedCallback != null
+                                            && session.tracker instanceof BackTouchTracker
+                                            && !((BackTouchTracker) session.tracker)
+                                            .getTriggerBack();
                             if (resetNavigationLost) {
                                 // A focus-taking window can make AOSP reset an unfinished
                                 // tracker before UP. Its timeout then skips invokeOrCancelBack()
@@ -3717,7 +3730,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                                                        boolean aospNullFallback,
                                                        long aospNullInputEpoch,
                                                        MiuiHomeAcceptedInputToken
-                                                                inputIdentity) {
+                                                               inputIdentity) {
             if (session == null || session.completionConsumed.get()
                     || !session.releaseQueued.compareAndSet(false, true)) {
                 return false;
@@ -3742,19 +3755,19 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected void finishGestureOnShellExecutor(ShellGestureSession session,
-                                                   float rawX, float rawY,
-                                                  float releaseDistance,
-                                                  boolean dispatchFinalProgress,
-                                                  boolean releaseAllowed,
-                                                  int releaseEdge,
-                                                  boolean recentsCallback,
-                                                  boolean shadeCallback,
-                                                  boolean drawerCallback,
-                                                  boolean editingCallback,
-                                                  boolean aospNullFallback,
-                                                  long aospNullInputEpoch,
-                                                  MiuiHomeAcceptedInputToken
-                                                           inputIdentity) {
+                                                    float rawX, float rawY,
+                                                    float releaseDistance,
+                                                    boolean dispatchFinalProgress,
+                                                    boolean releaseAllowed,
+                                                    int releaseEdge,
+                                                    boolean recentsCallback,
+                                                    boolean shadeCallback,
+                                                    boolean drawerCallback,
+                                                    boolean editingCallback,
+                                                    boolean aospNullFallback,
+                                                    long aospNullInputEpoch,
+                                                    MiuiHomeAcceptedInputToken
+                                                            inputIdentity) {
             Object releaseController = session.controller;
             Object tracker = null;
             try {
@@ -4075,8 +4088,8 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected void dispatchExplicitProgressOnShell(ShellGestureSession session,
-                                                      Object tracker,
-                                                      float distance) {
+                                                       Object tracker,
+                                                       float distance) {
             try {
                 Object callback = readField(session.controller,
                         "mActiveCallback");
@@ -4094,7 +4107,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected int inspectRemoteRunnerState(Object releaseController,
-                                             BackNavigationInfo info) {
+                                               BackNavigationInfo info) {
             try {
                 Object registry = readField(releaseController,
                         "mShellBackAnimationRegistry");
@@ -4155,7 +4168,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected void cancelFailedShellRelease(ShellGestureSession session,
-                                              Object tracker) {
+                                                Object tracker) {
             Object releaseController = session.controller;
             try {
                 Object activeTracker = invokeAnyMethod(releaseController,
@@ -4233,13 +4246,13 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
         }
 
         protected void logShellReleaseResult(BackNavigationInfo info,
-                                           boolean releaseAllowed,
-                                           boolean actualTrigger,
-                                           String outcome, int releaseEdge,
-                                           boolean recentsCallback,
-                                           boolean shadeCallback,
-                                           boolean drawerCallback,
-                                           boolean editingCallback) {
+                                             boolean releaseAllowed,
+                                             boolean actualTrigger,
+                                             String outcome, int releaseEdge,
+                                             boolean recentsCallback,
+                                             boolean shadeCallback,
+                                             boolean drawerCallback,
+                                             boolean editingCallback) {
             moduleLog(Log.INFO, TAG, "Completed Shell release transaction"
                     + ", type=" + info.getType()
                     + ", releaseAllowed=" + releaseAllowed

@@ -1,5 +1,6 @@
 package dev.codex.miuibackgesturehook.hooks.miuihome;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.IBinder;
 import android.os.Looper;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
+@SuppressLint("PrivateApi")
 abstract class MiuiHomeReturnHomeLifecycleRuntime
         extends MiuiHomeReturnHomeUnifiedCommitRuntime {
     protected abstract class ReturnHomeLifecycleController

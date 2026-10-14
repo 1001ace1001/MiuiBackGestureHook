@@ -8,8 +8,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.SharedPreferences
-import android.os.Bundle
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Process
@@ -20,11 +20,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.CheckCircleOutline
-import androidx.compose.material.icons.rounded.ErrorOutline
-import androidx.compose.material.icons.rounded.WarningAmber
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -36,16 +31,19 @@ import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircleOutline
+import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -65,11 +63,13 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.edit
 import dev.codex.miuibackgesturehook.BuildConfig
 import dev.codex.miuibackgesturehook.ModuleApplication
-import dev.codex.miuibackgesturehook.PredictiveBackPreferences
-import dev.codex.miuibackgesturehook.R
 import dev.codex.miuibackgesturehook.NativeHookStatusKind
 import dev.codex.miuibackgesturehook.NativeHookStatusProtocol
 import dev.codex.miuibackgesturehook.NativeHookStatusUiState
+import dev.codex.miuibackgesturehook.PredictiveBackPreferences
+import dev.codex.miuibackgesturehook.R
+import dev.codex.miuibackgesturehook.util.miuixBlurEffect
+import dev.codex.miuibackgesturehook.util.rememberMiuixBlurBackdrop
 import io.github.libxposed.service.XposedService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -86,8 +86,6 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
-import dev.codex.miuibackgesturehook.util.miuixBlurEffect
-import dev.codex.miuibackgesturehook.util.rememberMiuixBlurBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.preference.ArrowPreference
@@ -96,8 +94,8 @@ import top.yukonga.miuix.kmp.preference.WindowSpinnerPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.darkColorScheme
 import top.yukonga.miuix.kmp.theme.lightColorScheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
+import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 class PredictiveBackSettingsActivity :
@@ -106,7 +104,7 @@ class PredictiveBackSettingsActivity :
     private var xposedService: XposedService? by mutableStateOf(null)
     private var serviceStateObserved by mutableStateOf(false)
     private var nativeHookStatus by mutableStateOf(
-        NativeHookStatusUiState.checking(Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL),
+        NativeHookStatusUiState.checking(Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN),
     )
     private val statusHandler = Handler(Looper.getMainLooper())
     private var statusNonce = 0L
@@ -123,7 +121,7 @@ class PredictiveBackSettingsActivity :
             } else {
                 NativeHookStatusUiState(
                     kind = NativeHookStatusKind.NativeNoResponse,
-                    legacyMode = Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL,
+                    legacyMode = Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN,
                 )
             }
         }
@@ -252,7 +250,7 @@ class PredictiveBackSettingsActivity :
         systemUiResponseReceived = false
         systemUiReadyReported = false
         nativeHookStatus = NativeHookStatusUiState.checking(
-            Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL,
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN,
         )
         statusHandler.removeCallbacks(statusTimeout)
         statusHandler.postDelayed(statusTimeout, STATUS_TIMEOUT_MS)
@@ -272,17 +270,15 @@ class PredictiveBackSettingsActivity :
         }
     }
 
-    private fun isUidOwner(uid: Int, packageName: String): Boolean {
-        return try {
+    private fun isUidOwner(uid: Int, packageName: String) =
+        try {
             packageManager.getPackagesForUid(uid)?.contains(packageName) == true
         } catch (_: Throwable) {
             false
         }
-    }
 
-    companion object {
-        private const val STATUS_TIMEOUT_MS = 2500L
-        private const val ANDROID_17_API_LEVEL = 37
+    private companion object {
+        const val STATUS_TIMEOUT_MS = 2500L
     }
 }
 
@@ -294,10 +290,10 @@ private fun NativeHookRuntimeStatusCard(
 ) {
     val ready = state.kind == NativeHookStatusKind.Ready
     val warning = state.kind == NativeHookStatusKind.Checking
-        || state.kind == NativeHookStatusKind.WaitingForNative
-        || state.kind == NativeHookStatusKind.SystemUiNotReady
-        || state.kind == NativeHookStatusKind.NativeNotReady
-        || state.kind == NativeHookStatusKind.LegacyNotReady
+            || state.kind == NativeHookStatusKind.WaitingForNative
+            || state.kind == NativeHookStatusKind.SystemUiNotReady
+            || state.kind == NativeHookStatusKind.NativeNotReady
+            || state.kind == NativeHookStatusKind.LegacyNotReady
     val title = when (state.kind) {
         NativeHookStatusKind.Checking -> stringResource(
             if (state.legacyMode) {
@@ -306,6 +302,7 @@ private fun NativeHookRuntimeStatusCard(
                 R.string.native_hook_status_checking_title
             },
         )
+
         NativeHookStatusKind.WaitingForNative -> stringResource(
             if (state.legacyMode) {
                 R.string.native_hook_status_legacy_waiting_title
@@ -313,6 +310,7 @@ private fun NativeHookRuntimeStatusCard(
                 R.string.native_hook_status_waiting_title
             },
         )
+
         NativeHookStatusKind.Ready -> stringResource(
             if (state.legacyMode) {
                 R.string.native_hook_status_ready_legacy_title
@@ -320,12 +318,16 @@ private fun NativeHookRuntimeStatusCard(
                 R.string.native_hook_status_ready_title
             },
         )
+
         NativeHookStatusKind.SystemUiNotReady ->
             stringResource(R.string.native_hook_status_systemui_not_ready_title)
+
         NativeHookStatusKind.NativeNotReady ->
             stringResource(R.string.native_hook_status_native_not_ready_title)
+
         NativeHookStatusKind.LegacyNotReady ->
             stringResource(R.string.native_hook_status_legacy_not_ready_title)
+
         NativeHookStatusKind.NativeNoResponse ->
             stringResource(
                 if (state.legacyMode) {
@@ -334,8 +336,10 @@ private fun NativeHookRuntimeStatusCard(
                     R.string.native_hook_status_native_no_response_title
                 },
             )
+
         NativeHookStatusKind.ProfileRejected ->
             stringResource(R.string.native_hook_status_profile_rejected_title)
+
         NativeHookStatusKind.NoResponse -> stringResource(R.string.native_hook_status_no_response_title)
         NativeHookStatusKind.LsPosedUnavailable ->
             stringResource(R.string.native_hook_status_lsposed_unavailable_title)
@@ -348,6 +352,7 @@ private fun NativeHookRuntimeStatusCard(
                 R.string.native_hook_status_checking_summary
             },
         )
+
         NativeHookStatusKind.WaitingForNative ->
             stringResource(
                 if (state.legacyMode) {
@@ -356,6 +361,7 @@ private fun NativeHookRuntimeStatusCard(
                     R.string.native_hook_status_waiting_summary
                 },
             )
+
         NativeHookStatusKind.Ready -> stringResource(
             if (state.legacyMode) {
                 R.string.native_hook_status_ready_legacy_summary
@@ -365,12 +371,16 @@ private fun NativeHookRuntimeStatusCard(
                 R.string.native_hook_status_ready_static_summary
             },
         )
+
         NativeHookStatusKind.SystemUiNotReady ->
             stringResource(R.string.native_hook_status_systemui_not_ready_summary)
+
         NativeHookStatusKind.NativeNotReady ->
             stringResource(R.string.native_hook_status_native_not_ready_summary)
+
         NativeHookStatusKind.LegacyNotReady ->
             stringResource(R.string.native_hook_status_legacy_not_ready_summary)
+
         NativeHookStatusKind.NativeNoResponse ->
             stringResource(
                 if (state.legacyMode) {
@@ -379,8 +389,10 @@ private fun NativeHookRuntimeStatusCard(
                     R.string.native_hook_status_native_no_response_summary
                 },
             )
+
         NativeHookStatusKind.ProfileRejected ->
             stringResource(R.string.native_hook_status_profile_rejected_summary)
+
         NativeHookStatusKind.NoResponse -> stringResource(R.string.native_hook_status_no_response_summary)
         NativeHookStatusKind.LsPosedUnavailable ->
             stringResource(R.string.native_hook_status_lsposed_unavailable_summary)
@@ -407,6 +419,7 @@ private fun NativeHookRuntimeStatusCard(
     val iconTint = when {
         ready && MiuixTheme.isDynamicColor ->
             MiuixTheme.colorScheme.primary.copy(alpha = 0.8f)
+
         ready -> Color(0xFF36D167)
         warning && isSystemInDarkTheme() -> Color(0xFFFFC107)
         warning -> Color(0xFFFFB300)

@@ -1,11 +1,11 @@
 package dev.codex.miuibackgesturehook.hooks.systemui;
 
-import android.app.BroadcastOptions;
-import android.app.ActivityThread;
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
 import android.annotation.SuppressLint;
+import android.app.ActivityThread;
+import android.app.BroadcastOptions;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -16,14 +16,14 @@ import android.graphics.Matrix;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.Parcel;
 import android.os.Process;
 import android.os.SystemClock;
-import android.os.Bundle;
-import android.os.Build;
 import android.util.Log;
 import android.view.Display;
 import android.view.HapticFeedbackConstants;
@@ -39,6 +39,11 @@ import android.window.BackNavigationInfo;
 import android.window.BackProgressAnimator;
 import android.window.BackTouchTracker;
 import android.window.TransitionInfo;
+
+import org.luckypray.dexkit.DexKitBridge;
+import org.luckypray.dexkit.query.FindMethod;
+import org.luckypray.dexkit.query.matchers.MethodMatcher;
+import org.luckypray.dexkit.result.MethodData;
 
 import java.lang.ref.WeakReference;
 import java.lang.reflect.Array;
@@ -61,11 +66,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
 import io.github.libxposed.api.XposedInterface;
-import org.luckypray.dexkit.DexKitBridge;
-import org.luckypray.dexkit.query.FindMethod;
-import org.luckypray.dexkit.query.matchers.MethodMatcher;
-import org.luckypray.dexkit.result.MethodData;
 
+@SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
 public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
 
     private volatile SystemUiPlatformImpl systemUiPlatformImpl;
@@ -73,30 +75,30 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
     private volatile Context contextualSearchStateContext;
     private final SharedPreferences.OnSharedPreferenceChangeListener
             contextualSearchStatePreferenceListener = (preferences, key) -> {
-                if (!PredictiveBackPreferences.KEY_CONTEXTUAL_SEARCH_LONG_PRESS
-                        .equals(key)) {
-                    return;
-                }
-                contextualSearchPreferences = preferences;
-                Context context = contextualSearchStateContext;
-                SystemUiPlatformImpl implementation = systemUiPlatformImpl;
-                if (context == null || implementation == null) {
-                    return;
-                }
-                Handler mainHandler = new Handler(context.getMainLooper());
-                mainHandler.post(() -> {
-                    if (contextualSearchStateContext != context) {
-                        return;
-                    }
-                    if (!implementation.nativeLauncherOwnsContextualSearchLongPress()) {
-                        refreshContextualSearchInputReceivers();
-                        return;
-                    }
-                    publishSystemUiInputArbiterState(context,
-                            systemUiInputArbiterMonitorCount.get() > 0,
-                            "contextualSearchPreference:" + key);
-                });
-            };
+        if (!PredictiveBackPreferences.KEY_CONTEXTUAL_SEARCH_LONG_PRESS
+                .equals(key)) {
+            return;
+        }
+        contextualSearchPreferences = preferences;
+        Context context = contextualSearchStateContext;
+        SystemUiPlatformImpl implementation = systemUiPlatformImpl;
+        if (context == null || implementation == null) {
+            return;
+        }
+        Handler mainHandler = new Handler(context.getMainLooper());
+        mainHandler.post(() -> {
+            if (contextualSearchStateContext != context) {
+                return;
+            }
+            if (!implementation.nativeLauncherOwnsContextualSearchLongPress()) {
+                refreshContextualSearchInputReceivers();
+                return;
+            }
+            publishSystemUiInputArbiterState(context,
+                    systemUiInputArbiterMonitorCount.get() > 0,
+                    "contextualSearchPreference:" + key);
+        });
+    };
 
 
     protected void installSystemUiHooks(ClassLoader classLoader) {
@@ -243,7 +245,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                 + selected.name());
     }
 
-    protected SystemUiPlatformImpl requireSystemUiPlatformImpl() {
+    private SystemUiPlatformImpl requireSystemUiPlatformImpl() {
         SystemUiPlatformImpl implementation = systemUiPlatformImpl;
         if (implementation == null) {
             throw new IllegalStateException("SystemUI platform implementation not selected");
@@ -260,7 +262,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
         return implementation == null
                 ? MODULE_SYSTEMUI_INPUT_ARBITER_STATE
                 : implementation.systemUiInputArbiterStateAction(
-                        MODULE_SYSTEMUI_INPUT_ARBITER_STATE);
+                MODULE_SYSTEMUI_INPUT_ARBITER_STATE);
     }
 
     protected void hookPlatformBackAnimationStatusBarReset(ClassLoader classLoader) {
@@ -310,7 +312,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
 
     @Override
     protected boolean isNavigationOverlayExcluded(Object edgeBackGestureHandler,
-                                                   int x, int y) throws Exception {
+                                                  int x, int y) throws Exception {
         return requireSystemUiPlatformImpl().isNavigationOverlayExcluded(
                 edgeBackGestureHandler, x, y);
     }
@@ -1018,7 +1020,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
         }
         moduleLog(Log.INFO, TAG, "Invalidated Xiaomi OPEN transition snapshot"
                 + ", reason=" + reason
-                    + ", animatorCount=" + snapshot.animationCount());
+                + ", animatorCount=" + snapshot.animationCount());
         if (previousState == OPEN_SNAPSHOT_ACTIVE && normalEnd) {
             long handoffEpoch = openSnapshotLifecycleEpoch.incrementAndGet();
             new Handler(Looper.getMainLooper()).post(() -> {
@@ -2486,7 +2488,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                     BACK_ANIMATION_CONTROLLER, false, classLoader);
             Class<?> runnerStub = Class.forName(
                     "android.window.IBackAnimationRunner$Stub", false, classLoader);
-            Method onAnimationStart = Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+            Method onAnimationStart = Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                     ? resolvePreparedBackTargetArrivalWithDexKit(
                     classLoader, controllerClass, runnerStub)
                     : requireExactDeclaredMethod(
@@ -2856,7 +2858,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                 closingChange = change;
             } else if (mode == TRANSIT_TO_FRONT && openingComponent == null
                     && (flags == openingFlags
-                    || (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                    || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                     && windowingMode == WINDOWING_MODE_FULLSCREEN
                     && flags == (openingFlags & ~FLAG_FILLS_TASK)))) {
                 openingComponent = component;
@@ -2895,7 +2897,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
             Object closingComponent, Object openingComponent,
             SurfaceControl closingLeash, SurfaceControl openingLeash,
             int focusedTaskId, Rect taskBounds) throws Exception {
-        if (Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN
                 || closingChange == null || openingChange == null
                 || closingLeash == null || openingLeash == null
                 || surfacesAreSame(closingLeash, openingLeash)) {
@@ -5961,8 +5963,8 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
         }
         boolean wallpaperMatches = wallpaperExpected
                 ? wallpaperLeash != null
-                  && !surfacesAreSame(wallpaperLeash, appLeash)
-                  && !surfacesAreSame(wallpaperLeash, homeLeash)
+                && !surfacesAreSame(wallpaperLeash, appLeash)
+                && !surfacesAreSame(wallpaperLeash, homeLeash)
                 : wallpaperLeash == null;
         if (appChange == null || appLeash == null || homeLeash == null
                 || !wallpaperMatches
@@ -6528,7 +6530,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                         || intent.hasExtra("overview_visible")
                         || intent.hasExtra(EXTRA_LAUNCHER_EDITING)
                         || intent.hasExtra(EXTRA_LAUNCHER_HOME_SURFACE_VISIBLE);
-                if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                         && (carriesDartState
                         || intent.hasExtra(EXTRA_LAUNCHER_STATE_OWNER_EPOCH))) {
                     long ownerEpoch = intent.getLongExtra(
@@ -6573,7 +6575,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                 if (intent.hasExtra("drawer_visible")) {
                     long drawerGeneration = intent.getLongExtra(
                             EXTRA_INPUT_ARBITER_GENERATION, 0L);
-                    if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                             && drawerGeneration != systemUiInputArbiterGeneration) {
                         moduleLog(Log.WARN, TAG,
                                 "Ignored stale native MiuiHome drawer state"
@@ -6593,7 +6595,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                 if (intent.hasExtra(EXTRA_LAUNCHER_XIAOAI_VISIBLE)) {
                     long xiaoAiGeneration = intent.getLongExtra(
                             EXTRA_INPUT_ARBITER_GENERATION, 0L);
-                    if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                             && xiaoAiGeneration
                             != systemUiInputArbiterGeneration) {
                         moduleLog(Log.WARN, TAG,
@@ -6621,7 +6623,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                             + ", uid=" + senderUid
                             + ", package=" + senderPackage);
                 }
-                if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                         && intent.hasExtra(EXTRA_LAUNCHER_HOME_SURFACE_VISIBLE)) {
                     // Caller, arbiter generation and Dart owner were validated above.
                     // A distinct key prevents old native editing hooks from reviving the
@@ -6633,7 +6635,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                             + ", generation=" + systemUiInputArbiterGeneration
                             + ", ownerEpoch=" + miuiLauncherDartStateOwnerEpoch);
                 }
-                if (Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN
                         && intent.hasExtra(EXTRA_LAUNCHER_EDITING)) {
                     miuiLauncherEditing = intent.getBooleanExtra(EXTRA_LAUNCHER_EDITING, false);
                     moduleLog(Log.INFO, TAG, "MiuiHome editing state changed"
@@ -6687,7 +6689,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                 if (intent.hasExtra("overview_visible")) {
                     long overviewGeneration = intent.getLongExtra(
                             EXTRA_INPUT_ARBITER_GENERATION, 0L);
-                    if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                             && overviewGeneration
                             != systemUiInputArbiterGeneration) {
                         moduleLog(Log.WARN, TAG,
@@ -6704,7 +6706,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                         return;
                     }
                     state = overviewVisible ? "actualRecentsEnter" : "actualRecentsExit";
-                    source = Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL
+                    source = Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN
                             ? "nativeOverview" : "RecentsContainer";
                 } else if ("toRecents".equals(state)) {
                     overviewVisible = true;
@@ -6811,7 +6813,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
 
     protected Context resolveCurrentApplicationContext(ClassLoader classLoader) {
         try {
-            if (Build.VERSION.SDK_INT >= ANDROID_17_API_LEVEL) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.CINNAMON_BUN) {
                 return ActivityThread.currentApplication();
             }
             Class<?> activityThread = Class.forName(
@@ -6909,7 +6911,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
             return;
         }
         try {
-            boolean legacyMode = Build.VERSION.SDK_INT < ANDROID_17_API_LEVEL;
+            boolean legacyMode = Build.VERSION.SDK_INT < Build.VERSION_CODES.CINNAMON_BUN;
             boolean legacyReady = nativeReply != null && nativeReply.getBooleanExtra(
                     EXTRA_STATUS_LEGACY_READY, false);
             boolean profileResolved = nativeReply != null && nativeReply.getBooleanExtra(
