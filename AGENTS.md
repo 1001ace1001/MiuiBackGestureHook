@@ -300,12 +300,22 @@ Same-activity and input rules:
 - In the default AOSP mode, if native display policy nevertheless shows the navigation bar
   transiently during an allowed stream, cancel any module-started Shell gesture and do not
   also commit BACK.
-- The explicit fullscreen direct-back preference may bypass only the hidden-navigation-bar
+- In SystemUI, the explicit fullscreen direct-back preference may bypass only the hidden-navigation-bar
   admission gate and transient-bar yield. Snapshot it at `ACTION_DOWN` only with readable,
   display-matching native `SysUiState`; missing or malformed preferences preserve AOSP policy.
   Keep accepted-DOWN authentication, native redirect/exclusion decisions, SystemUI lifecycle,
   native panel thresholds and ordered Shell commit/cancel unchanged. Preference changes apply
   to the next physical stream; do not force bar visibility or synthesize an extra BACK.
+- In the existing system-server transient-bars hook, fullscreen direct-back mode must preserve
+  Xiaomi's original `requestTransientBars(null, false)` call instead of supplying a NavigationBar
+  target. Keep that parameter correction exclusive to AOSP mode; missing or malformed preferences
+  preserve the AOSP correction. Do not hide bars after they appear or change other native requests.
+- Restored NavigationBar side-gesture Insets may make that same NavigationBar the native left/right
+  gesture host. In direct-back mode, restore the null target only for its exact non-system-bar
+  request within the same DisplayPolicy left/right callback, bound to the policy, NavigationBar
+  identity and current call thread. Preserve native exclusion checks and callback cleanup; clear
+  the scope in `finally`. Do not apply it to mouse-hover callbacks, top/bottom callbacks, other
+  windows or displays; the native mouse-hover state distinguishes its reused side callback.
 - Preserve the current window-requested status-bar and navigation-bar appearance while those
   transient bars are shown; do not replace it with SystemUI's forced semi-transparent mode.
   If preserving that appearance leaves NavigationBar's transition mode unchanged, explicitly

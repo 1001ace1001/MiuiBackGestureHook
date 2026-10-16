@@ -60,6 +60,7 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
     private static final int TYPE_DISPLAY_OVERLAY = 2026;
     private static final long SIDEBAR_GESTURE_MAX_AGE_MS = 2000L;
     private final ThreadLocal<Boolean> contextualSearchBridgeInvocation = new ThreadLocal<>();
+    private final FullscreenSideSwipeScope fullscreenSideSwipeScope = new FullscreenSideSwipeScope();
     protected final AtomicInteger contextualSearchBridgeCallsInFlight = new AtomicInteger();
     private volatile PackageManager contextualSearchPackageManager;
     private volatile int contextualSearchPackageResourceId;
@@ -593,6 +594,7 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
 
     protected void hookSecuritySidebarTransientBars(ClassLoader classLoader,
                                                     Set<String> existingHookIds) {
+        hookFullscreenSideSwipeCallbacks(classLoader, existingHookIds);
         try {
             Class<?> policyClass = Class.forName(DISPLAY_POLICY, false, classLoader);
             int hooked = 0;
@@ -627,6 +629,76 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
         } catch (Throwable throwable) {
             moduleLog(Log.ERROR, TAG, "Failed to hook security-sidebar transient bars", throwable);
         }
+    }
+
+    private void hookFullscreenSideSwipeCallbacks(ClassLoader classLoader,
+                                                  Set<String> existingHookIds) {
+        String[] hookIds = {"server_fullscreen_side_swipe_left",
+                "server_fullscreen_side_swipe_right"};
+        if (existingHookIds.contains(hookIds[0]) && existingHookIds.contains(hookIds[1])) {
+            return;
+        }
+        try {
+            Class<?> policyClass = Class.forName(DISPLAY_POLICY, false, classLoader);
+            Class<?> callbacksClass = Class.forName(DISPLAY_POLICY + "$1", false, classLoader);
+            Class<?> callbacksContract = Class.forName(
+                    "com.android.server.wm.SystemGesturesPointerEventListener$Callbacks",
+                    false, classLoader);
+            if (!callbacksContract.isAssignableFrom(callbacksClass)
+                    || callbacksClass.getDeclaredField("this$0").getType() != policyClass) {
+                throw new IllegalStateException("Unexpected DisplayPolicy swipe callback owner");
+            }
+            Method[] methods = {callbacksClass.getDeclaredMethod("onSwipeFromLeft"),
+                    callbacksClass.getDeclaredMethod("onSwipeFromRight")};
+            for (Method method : methods) {
+                if (method.getReturnType() != void.class) {
+                    throw new IllegalStateException("Unexpected side-swipe callback signature");
+                }
+            }
+            for (int i = 0; i < methods.length; i++) {
+                if (existingHookIds.contains(hookIds[i])) {
+                    continue;
+                }
+                methods[i].setAccessible(true);
+                recordHookHandle(hook(methods[i]).setId(hookIds[i])
+                        .intercept(this::interceptFullscreenSideSwipe));
+                moduleLog(Log.INFO, TAG, "Hooked fullscreen side-swipe origin: " + hookIds[i]);
+            }
+        } catch (Throwable throwable) {
+            moduleLog(Log.WARN, TAG,
+                    "Fullscreen side-swipe callback unavailable; preserving native requests",
+                    throwable);
+        }
+    }
+
+    protected Object interceptFullscreenSideSwipe(XposedInterface.Chain chain) throws Throwable {
+        if (!isFullscreenDirectBackEnabled()) {
+            return chain.proceed();
+        }
+        Object policy;
+        Object navigationBar;
+        boolean matchingHost;
+        try {
+            policy = readField(chain.getThisObject(), "this$0");
+            boolean left = "onSwipeFromLeft".equals(chain.getExecutable().getName());
+            String hostField = left ? "mLeftGestureHost" : "mRightGestureHost";
+            Object gestures = readField(policy, "mSystemGestures");
+            boolean mouseHovering = !Boolean.FALSE.equals(readField(gestures,
+                    left ? "mMouseHoveringAtLeft" : "mMouseHoveringAtRight"));
+            Object lock = readField(policy, "mLock");
+            synchronized (lock) {
+                navigationBar = readField(policy, "mNavigationBar");
+                matchingHost = !mouseHovering && navigationBar != null
+                        && readField(policy, hostField) == navigationBar;
+            }
+        } catch (Throwable throwable) {
+            moduleLog(Log.WARN, TAG, "Cannot identify native side-swipe owner", throwable);
+            return chain.proceed();
+        }
+        if (!matchingHost) {
+            return chain.proceed();
+        }
+        return fullscreenSideSwipeScope.intercept(chain, policy, navigationBar);
     }
 
     protected Object interceptSecuritySidebarTransientBars(XposedInterface.Chain chain)
@@ -667,9 +739,21 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
                 return null;
             }
         }
+        Object[] sideSwipeArguments = fullscreenSideSwipeScope.requestArguments(
+                chain.getThisObject(), chain.getArgs());
+        if (sideSwipeArguments != null) {
+            moduleLog(Log.INFO, TAG, "Preserved Xiaomi side-swipe null target"
+                    + ", originalTarget=" + shortObject(chain.getArg(0)));
+            return chain.proceed(sideSwipeArguments);
+        }
         if (chain.getArgs().size() == 2
                 && chain.getArg(0) == null
                 && Boolean.FALSE.equals(chain.getArg(1))) {
+            if (isFullscreenDirectBackEnabled()) {
+                // Xiaomi returns early for a null swipe target. Keep that native path
+                // in direct-back mode instead of supplying a target that reveals bars.
+                return chain.proceed();
+            }
             Object navigationBar;
             try {
                 navigationBar = readField(chain.getThisObject(), "mNavigationBar");

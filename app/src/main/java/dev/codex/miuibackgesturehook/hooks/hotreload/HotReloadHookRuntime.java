@@ -825,6 +825,9 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                 return this::preserveTransientBarAppearance;
             case "systemui_navigation_bar_show_transient":
                 return this::preserveTransientBarAutoHide;
+            case "server_fullscreen_side_swipe_left":
+            case "server_fullscreen_side_swipe_right":
+                return this::interceptFullscreenSideSwipe;
             case "systemui_a17_back_background_status_reset":
                 return this::neutralizeBrokenBackAnimationStatusBarReset;
             case "systemui_navigation_bar_gesture_insets":
