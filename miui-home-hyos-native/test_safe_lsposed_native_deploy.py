@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from safe_lsposed_native_deploy import CommandResult, Deployer
 
@@ -36,6 +37,62 @@ class PackageInstallationTest(unittest.TestCase):
                         index = command.index("--enable-rollback")
                         self.assertEqual(command[index + 1], "2")
                     self.assertEqual(command[-1], str(apk))
+
+
+class StatusDeployer(RecordingDeployer):
+    def __init__(self, replies):
+        super().__init__()
+        self.replies = replies
+        self.probes = 0
+
+    def invoke_adb(self, arguments, *, allow_failure=False):
+        self.commands.append(list(arguments))
+        if arguments[:3] == ["shell", "am", "start"]:
+            self.probes += 1
+            return CommandResult(0, ("Status: ok",), "Status: ok")
+        return CommandResult(0, (), "")
+
+    def get_lsposed_log_snapshot(self):
+        return self.probes
+
+    def read_lsposed_log_delta(self, snapshot):
+        return self.replies[min(self.probes - 1, len(self.replies) - 1)]
+
+
+class NativeStatusProbeTest(unittest.TestCase):
+    @staticmethod
+    def reply(ready, native=True):
+        return (
+            "Published module runtime status reply, "
+            f"nativeResponse={str(native).lower()}, statusReady={str(ready).lower()}"
+        )
+
+    @patch("safe_lsposed_native_deploy.time.sleep")
+    def test_initializing_launcher_can_become_ready_on_a_later_fresh_probe(self, sleep):
+        deployer = StatusDeployer([self.reply(False), self.reply(False), self.reply(True)])
+        result = deployer.wait_native_ready_status(123)
+        self.assertIn("authenticated_native_status=ready", result)
+        self.assertEqual(deployer.probes, 3)
+        self.assertEqual(sleep.call_count, 41)
+        self.assertEqual(deployer.commands[-1][:3], ["shell", "am", "force-stop"])
+
+    @patch("safe_lsposed_native_deploy.time.sleep")
+    def test_not_ready_still_fails_after_the_existing_bounded_windows(self, sleep):
+        deployer = StatusDeployer([self.reply(False)])
+        with self.assertRaisesRegex(RuntimeError, "3 bounded probes") as failure:
+            deployer.wait_native_ready_status(123)
+        self.assertIn("statusReady=false", str(failure.exception))
+        self.assertEqual(deployer.probes, 3)
+        self.assertEqual(sleep.call_count, 60)
+        self.assertEqual(deployer.commands[-1][:3], ["shell", "am", "force-stop"])
+
+    @patch("safe_lsposed_native_deploy.time.sleep")
+    def test_systemui_only_reply_cannot_prove_native_readiness(self, sleep):
+        deployer = StatusDeployer([self.reply(True, native=False)])
+        with self.assertRaisesRegex(RuntimeError, "3 bounded probes"):
+            deployer.wait_native_ready_status(123)
+        self.assertEqual(deployer.probes, 3)
+        self.assertEqual(sleep.call_count, 60)
 
 
 if __name__ == "__main__":

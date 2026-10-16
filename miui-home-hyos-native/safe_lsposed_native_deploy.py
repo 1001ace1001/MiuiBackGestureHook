@@ -487,7 +487,7 @@ echo "$size"
         last_native_status = ""
         try:
             # The first authenticated query can race the private broadcast
-            # runtime-holder capture immediately after a fresh launcher fork.
+            # runtime-holder capture and Dart hook installation after a fresh fork.
             # Retry with a new Activity instance and nonce; every attempt still
             # requires an authenticated native response and full ready state.
             for probe_attempt in range(3):
@@ -515,11 +515,9 @@ echo "$size"
                         last_native_status = native_status
                     if "statusReady=true" in native_status:
                         return f"authenticated_native_status=ready\n{native_status}"
-                    if "statusReady=false" in native_status:
-                        raise RuntimeError(
-                            "Authenticated native status reported not ready.\n"
-                            f"{native_status}"
-                        )
+                    # A valid not-ready reply is not success. Finish this bounded
+                    # window, then probe with a fresh nonce while initialization
+                    # can still complete; the final failure retains the last reply.
             raise RuntimeError(
                 "Authenticated native status did not become ready after "
                 "3 bounded probes.\n"
