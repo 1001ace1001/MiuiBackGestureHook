@@ -1,6 +1,7 @@
 package dev.codex.miuibackgesturehook.hooks.systemserver;
 
 import android.annotation.SuppressLint;
+import android.app.ActivityThread;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
@@ -360,10 +361,8 @@ public abstract class SystemServerHookRuntime extends MiuiHomeHookRuntime {
             return cached;
         }
         try {
-            Class<?> activityThreadClass = Class.forName("android.app.ActivityThread");
-            Object application = activityThreadClass
-                    .getDeclaredMethod("currentApplication")
-                    .invoke(null);
+            Class<?> activityThreadClass = ActivityThread.class;
+            Object application = ActivityThread.currentApplication();
             Context context = application instanceof Context ? (Context) application : null;
             if (context == null) {
                     Object activityThread = activityThreadClass

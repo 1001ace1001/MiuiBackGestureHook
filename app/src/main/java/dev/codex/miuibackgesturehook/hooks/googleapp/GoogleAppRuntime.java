@@ -1,6 +1,6 @@
 package dev.codex.miuibackgesturehook.hooks.googleapp;
 
-import android.annotation.SuppressLint;
+import android.app.ActivityThread;
 import android.content.Context;
 import android.content.SharedPreferences;
 import android.util.Log;
@@ -11,7 +11,6 @@ import io.github.libxposed.api.XposedInterface;
 import org.luckypray.dexkit.DexKitBridge;
 
 /** Coordinates independent Google features without inheriting any process runtime. */
-@SuppressLint("DiscouragedPrivateApi")
 public final class GoogleAppRuntime {
     public static final String GOOGLE_APP = "com.google.android.googlequicksearchbox";
 
@@ -42,8 +41,7 @@ public final class GoogleAppRuntime {
     public String resolveSourceDir() {
         if (sourceDir != null && !sourceDir.isEmpty()) return sourceDir;
         try {
-            Object app = Class.forName("android.app.ActivityThread")
-                    .getDeclaredMethod("currentApplication").invoke(null);
+            Object app = ActivityThread.currentApplication();
             if (app instanceof Context) sourceDir = ((Context) app).getApplicationInfo().sourceDir;
         } catch (Throwable throwable) {
             host.log(Log.WARN, "Could not recover Google App source path", throwable);
