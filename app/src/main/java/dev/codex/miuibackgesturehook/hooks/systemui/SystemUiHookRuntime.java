@@ -2282,7 +2282,8 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
             throws Throwable {
         Object feedbackConstant = chain.getArg(1);
         if (isAospBackThresholdHaptic(feedbackConstant)
-                && playHyperOsReplacementHaptic(chain.getArg(0))) {
+                && ((isAospBackPanelView(chain.getArg(0)) && isGestureHapticsDisabled())
+                || playHyperOsReplacementHaptic(chain.getArg(0)))) {
             return null;
         }
         return chain.proceed();
@@ -2348,9 +2349,9 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
         Object feedbackConstant = chain.getArg(0);
         if (isAospBackPanelView(view)
                 && isAospBackThresholdHaptic(feedbackConstant)
-                && playHyperOsReplacementHaptic(view)) {
+                && (isGestureHapticsDisabled() || playHyperOsReplacementHaptic(view))) {
             // View.performHapticFeedback returns boolean. Report that the original
-            // threshold feedback was accepted after replacing its effect.
+            // threshold feedback was handled after replacing or disabling its effect.
             return Boolean.TRUE;
         }
         return chain.proceed();

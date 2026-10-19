@@ -699,9 +699,27 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
     }
 
     protected boolean isHyperOsHapticsEnabled() {
-        return readHyperOsBooleanPreference(
-                PredictiveBackPreferences.KEY_HYPEROS_HAPTICS,
-                PredictiveBackPreferences.DEFAULT_HYPEROS_HAPTICS);
+        return readGestureHapticEffect() == PredictiveBackPreferences.GESTURE_HAPTIC_HYPEROS;
+    }
+
+    protected boolean isGestureHapticsDisabled() {
+        return readGestureHapticEffect() == PredictiveBackPreferences.GESTURE_HAPTIC_DISABLED;
+    }
+
+    protected int readGestureHapticEffect() {
+        try {
+            int effect = PredictiveBackPreferences.readGestureHapticEffect(
+                    getHyperOsIndicatorPreferences());
+            hyperOsIndicatorPreferencesFailureLogged = false;
+            return effect;
+        } catch (Throwable throwable) {
+            if (!hyperOsIndicatorPreferencesFailureLogged) {
+                hyperOsIndicatorPreferencesFailureLogged = true;
+                moduleLog(Log.ERROR, TAG, "Gesture haptic preference unavailable"
+                        + ", policy=keepNativePanelHaptics", throwable);
+            }
+            return PredictiveBackPreferences.GESTURE_HAPTIC_AOSP;
+        }
     }
 
     protected boolean isHyperOsIndicatorBlurEnabled() {
@@ -730,19 +748,23 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                 PredictiveBackPreferences.DEFAULT_ONEUI_CROSS_TASK_ANIMATION);
     }
 
-    protected boolean readHyperOsBooleanPreference(String key, boolean defaultValue) {
-        try {
-            SharedPreferences preferences = hyperOsIndicatorPreferences;
-            if (preferences == null) {
-                synchronized (this) {
-                    preferences = hyperOsIndicatorPreferences;
-                    if (preferences == null) {
-                        preferences = getRemotePreferences(
-                                PredictiveBackPreferences.GROUP);
-                        hyperOsIndicatorPreferences = preferences;
-                    }
+    protected SharedPreferences getHyperOsIndicatorPreferences() {
+        SharedPreferences preferences = hyperOsIndicatorPreferences;
+        if (preferences == null) {
+            synchronized (this) {
+                preferences = hyperOsIndicatorPreferences;
+                if (preferences == null) {
+                    preferences = getRemotePreferences(PredictiveBackPreferences.GROUP);
+                    hyperOsIndicatorPreferences = preferences;
                 }
             }
+        }
+        return preferences;
+    }
+
+    protected boolean readHyperOsBooleanPreference(String key, boolean defaultValue) {
+        try {
+            SharedPreferences preferences = getHyperOsIndicatorPreferences();
             boolean enabled = preferences.getBoolean(key, defaultValue);
             hyperOsIndicatorPreferencesFailureLogged = false;
             return enabled;
@@ -4436,7 +4458,8 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                             && prepareMiuiStyleHaptics();
                     // May clear miuiStyleHapticsActive on failure, so the overlay must
                     // learn the final value afterwards or both sources would vibrate.
-                    applyNativePanelHapticSuppression(plugin, miuiStyleHapticsActive);
+                    applyNativePanelHapticSuppression(plugin,
+                            isGestureHapticsDisabled() || miuiStyleHapticsActive);
                     if (miuiStyleOverlay != null) {
                         miuiStyleOverlay.setHapticsForGesture(miuiStyleHapticsActive);
                     }
@@ -4759,7 +4782,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                 if (target.isHapticFeedbackEnabled() != enabled) {
                     target.setHapticFeedbackEnabled(enabled);
                     moduleLog(Log.INFO, TAG, "Native BackPanel haptics "
-                            + (suppress ? "suppressed for MIUI two-stage haptics"
+                            + (suppress ? "suppressed by gesture haptic preference"
                             : "restored"));
                 }
             } catch (Throwable throwable) {

@@ -537,8 +537,12 @@ private fun PredictiveBackSettingsScreen(
     var confirmedHyperOsIndicatorBlur by remember {
         mutableStateOf(PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR)
     }
-    var hyperOsHaptics by remember { mutableStateOf(false) }
-    var confirmedHyperOsHaptics by remember { mutableStateOf(false) }
+    var gestureHapticEffect by remember {
+        mutableStateOf(PredictiveBackPreferences.GESTURE_HAPTIC_AOSP)
+    }
+    var confirmedGestureHapticEffect by remember {
+        mutableStateOf(PredictiveBackPreferences.GESTURE_HAPTIC_AOSP)
+    }
     var hyperOsHapticsEnhanced by remember { mutableStateOf(false) }
     var confirmedHyperOsHapticsEnhanced by remember { mutableStateOf(false) }
     var hyperOsSlideAnimation by remember { mutableStateOf(false) }
@@ -570,8 +574,8 @@ private fun PredictiveBackSettingsScreen(
         confirmedHyperOsIndicator = false
         hyperOsIndicatorBlur = PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR
         confirmedHyperOsIndicatorBlur = PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR
-        hyperOsHaptics = false
-        confirmedHyperOsHaptics = false
+        gestureHapticEffect = PredictiveBackPreferences.GESTURE_HAPTIC_AOSP
+        confirmedGestureHapticEffect = PredictiveBackPreferences.GESTURE_HAPTIC_AOSP
         hyperOsHapticsEnhanced = false
         confirmedHyperOsHapticsEnhanced = false
         hyperOsSlideAnimation = false
@@ -618,12 +622,18 @@ private fun PredictiveBackSettingsScreen(
                         storedHyperOsHaptics
                     }
                 }
+                val hapticEffect = if (remotePreferences.contains(PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT)) {
+                    PredictiveBackPreferences.readGestureHapticEffect(remotePreferences)
+                } else if (unifiedHyperOsHaptics) {
+                    PredictiveBackPreferences.GESTURE_HAPTIC_HYPEROS
+                } else {
+                    PredictiveBackPreferences.GESTURE_HAPTIC_AOSP
+                }
                 val flags = booleanArrayOf(
                     remotePreferences.getBoolean(
                         PredictiveBackPreferences.KEY_HYPEROS_INDICATOR,
                         PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR,
                     ),
-                    unifiedHyperOsHaptics,
                     remotePreferences.getBoolean(
                         PredictiveBackPreferences.KEY_HYPEROS_HAPTICS_ENHANCED,
                         PredictiveBackPreferences.DEFAULT_HYPEROS_HAPTICS_ENHANCED,
@@ -649,25 +659,25 @@ private fun PredictiveBackSettingsScreen(
                         PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR,
                     ),
                 )
-                remotePreferences to flags
+                Triple(remotePreferences, flags, hapticEffect)
             }
             preferences = loaded.first
             hyperOsIndicator = loaded.second[0]
             confirmedHyperOsIndicator = loaded.second[0]
-            hyperOsHaptics = loaded.second[1]
-            confirmedHyperOsHaptics = loaded.second[1]
-            hyperOsHapticsEnhanced = loaded.second[2]
-            confirmedHyperOsHapticsEnhanced = loaded.second[2]
-            hyperOsSlideAnimation = loaded.second[3]
-            confirmedHyperOsSlideAnimation = loaded.second[3]
-            oneUiCrossTaskAnimation = loaded.second[4]
-            confirmedOneUiCrossTaskAnimation = loaded.second[4]
-            moduleLogging = loaded.second[5]
-            confirmedModuleLogging = loaded.second[5]
-            fullscreenDirectBack = loaded.second[6]
-            confirmedFullscreenDirectBack = loaded.second[6]
-            hyperOsIndicatorBlur = loaded.second[7]
-            confirmedHyperOsIndicatorBlur = loaded.second[7]
+            gestureHapticEffect = loaded.third
+            confirmedGestureHapticEffect = loaded.third
+            hyperOsHapticsEnhanced = loaded.second[1]
+            confirmedHyperOsHapticsEnhanced = loaded.second[1]
+            hyperOsSlideAnimation = loaded.second[2]
+            confirmedHyperOsSlideAnimation = loaded.second[2]
+            oneUiCrossTaskAnimation = loaded.second[3]
+            confirmedOneUiCrossTaskAnimation = loaded.second[3]
+            moduleLogging = loaded.second[4]
+            confirmedModuleLogging = loaded.second[4]
+            fullscreenDirectBack = loaded.second[5]
+            confirmedFullscreenDirectBack = loaded.second[5]
+            hyperOsIndicatorBlur = loaded.second[6]
+            confirmedHyperOsIndicatorBlur = loaded.second[6]
         } catch (_: Throwable) {
             configurationError = configurationErrorMessage
         } finally {
@@ -732,14 +742,47 @@ private fun PredictiveBackSettingsScreen(
             { confirmedHyperOsIndicator = it },
         )
     }
-    val persistHyperOsHaptics: (Boolean) -> Unit = { requestedEnabled ->
-        persistBooleanPreference(
-            PredictiveBackPreferences.KEY_HYPEROS_HAPTICS,
-            requestedEnabled,
-            { hyperOsHaptics = it },
-            { confirmedHyperOsHaptics },
-            { confirmedHyperOsHaptics = it },
-        )
+    val persistGestureHapticEffect: (Int) -> Unit = { requestedEffect ->
+        val activePreferences = preferences
+        if (activePreferences != null) {
+            gestureHapticEffect = requestedEffect
+            saveError = null
+            scope.launch {
+                val saved = writeMutex.withLock {
+                    val fallbackEffect = confirmedGestureHapticEffect
+                    val commitSucceeded = withContext(Dispatchers.IO) {
+                        var succeeded = false
+                        try {
+                            activePreferences.edit(commit = true) {
+                                putInt(PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT, requestedEffect)
+                                succeeded = commit()
+                            }
+                        } catch (_: Throwable) {
+                            succeeded = false
+                        }
+                        if (!succeeded) {
+                            try {
+                                activePreferences.edit(commit = true) {
+                                    putInt(PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT, fallbackEffect)
+                                    commit()
+                                }
+                            } catch (_: Throwable) {
+                                // Restore the RemotePreferences cache where possible.
+                            }
+                        }
+                        succeeded
+                    }
+                    if (preferences === activePreferences && commitSucceeded) {
+                        confirmedGestureHapticEffect = requestedEffect
+                    }
+                    commitSucceeded
+                }
+                if (preferences === activePreferences && !saved) {
+                    gestureHapticEffect = confirmedGestureHapticEffect
+                    saveError = saveErrorMessage
+                }
+            }
+        }
     }
     val persistHyperOsIndicatorBlur: (Boolean) -> Unit = { requestedEnabled ->
         persistBooleanPreference(
@@ -875,14 +918,14 @@ private fun PredictiveBackSettingsScreen(
                 HyperOsSwitchGroupCard(
                     hyperOsIndicator = hyperOsIndicator,
                     hyperOsIndicatorBlur = hyperOsIndicatorBlur,
-                    hyperOsHaptics = hyperOsHaptics,
+                    gestureHapticEffect = gestureHapticEffect,
                     hyperOsHapticsEnhanced = hyperOsHapticsEnhanced,
                     hyperOsSlideAnimation = hyperOsSlideAnimation,
                     oneUiCrossTaskAnimation = oneUiCrossTaskAnimation,
                     configurationEnabled = configurationEnabled,
                     onHyperOsIndicatorToggle = persistHyperOsIndicator,
                     onHyperOsIndicatorBlurToggle = persistHyperOsIndicatorBlur,
-                    onHyperOsHapticsToggle = persistHyperOsHaptics,
+                    onGestureHapticEffectChange = persistGestureHapticEffect,
                     onHyperOsHapticsEnhancedToggle = persistHyperOsHapticsEnhanced,
                     onHyperOsSlideAnimationToggle = persistHyperOsSlideAnimation,
                     onOneUiCrossTaskAnimationToggle = persistOneUiCrossTaskAnimation,
@@ -976,19 +1019,20 @@ private fun cardAccentColor(severity: SettingsCardSeverity): Color = when (sever
 private fun HyperOsSwitchGroupCard(
     hyperOsIndicator: Boolean,
     hyperOsIndicatorBlur: Boolean,
-    hyperOsHaptics: Boolean,
+    gestureHapticEffect: Int,
     hyperOsHapticsEnhanced: Boolean,
     hyperOsSlideAnimation: Boolean,
     oneUiCrossTaskAnimation: Boolean,
     configurationEnabled: Boolean,
     onHyperOsIndicatorToggle: (Boolean) -> Unit,
     onHyperOsIndicatorBlurToggle: (Boolean) -> Unit,
-    onHyperOsHapticsToggle: (Boolean) -> Unit,
+    onGestureHapticEffectChange: (Int) -> Unit,
     onHyperOsHapticsEnhancedToggle: (Boolean) -> Unit,
     onHyperOsSlideAnimationToggle: (Boolean) -> Unit,
     onOneUiCrossTaskAnimationToggle: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val hyperOsHaptics = gestureHapticEffect == PredictiveBackPreferences.GESTURE_HAPTIC_HYPEROS
     Card(
         modifier = modifier.fillMaxWidth(),
         insideMargin = PaddingValues(0.dp),
@@ -1037,20 +1081,22 @@ private fun HyperOsSwitchGroupCard(
                     text = stringResource(R.string.haptic_feedback_effect_hyperos),
                     summary = stringResource(R.string.haptic_feedback_effect_hyperos_summary),
                 ),
+                DropdownItem(
+                    text = stringResource(R.string.haptic_feedback_effect_disabled),
+                    summary = stringResource(R.string.haptic_feedback_effect_disabled_summary),
+                ),
             ),
-            selectedIndex = if (hyperOsHaptics) 1 else 0,
+            selectedIndex = gestureHapticEffect,
             title = stringResource(R.string.haptic_feedback_effect_title),
             summary = stringResource(
-                if (hyperOsHaptics) {
-                    R.string.haptic_feedback_effect_hyperos_summary
-                } else {
-                    R.string.haptic_feedback_effect_aosp_summary
+                when (gestureHapticEffect) {
+                    PredictiveBackPreferences.GESTURE_HAPTIC_HYPEROS -> R.string.haptic_feedback_effect_hyperos_summary
+                    PredictiveBackPreferences.GESTURE_HAPTIC_DISABLED -> R.string.haptic_feedback_effect_disabled_summary
+                    else -> R.string.haptic_feedback_effect_aosp_summary
                 },
             ),
             enabled = configurationEnabled,
-            onSelectedIndexChange = { selectedIndex ->
-                onHyperOsHapticsToggle(selectedIndex == 1)
-            },
+            onSelectedIndexChange = onGestureHapticEffectChange,
         )
         SwitchPreference(
             title = stringResource(R.string.hyperos_haptics_enhanced_title),

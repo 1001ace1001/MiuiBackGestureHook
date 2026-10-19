@@ -1,5 +1,7 @@
 package dev.codex.miuibackgesturehook
 
+import android.content.SharedPreferences
+
 object PredictiveBackPreferences {
     const val GROUP = "predictive_back_opt_in"
     const val KEY_PACKAGES = "packages"
@@ -9,6 +11,25 @@ object PredictiveBackPreferences {
     const val DEFAULT_HYPEROS_INDICATOR_BLUR = false
     const val KEY_HYPEROS_HAPTICS = "hyperos_indicator_haptics"
     const val DEFAULT_HYPEROS_HAPTICS = false
+    const val KEY_GESTURE_HAPTIC_EFFECT = "gesture_haptic_effect"
+    const val GESTURE_HAPTIC_AOSP = 0
+    const val GESTURE_HAPTIC_HYPEROS = 1
+    const val GESTURE_HAPTIC_DISABLED = 2
+
+    @JvmStatic
+    fun readGestureHapticEffect(preferences: SharedPreferences): Int {
+        if (!preferences.contains(KEY_GESTURE_HAPTIC_EFFECT)) {
+            return if (preferences.getBoolean(KEY_HYPEROS_HAPTICS, DEFAULT_HYPEROS_HAPTICS)) {
+                GESTURE_HAPTIC_HYPEROS
+            } else {
+                GESTURE_HAPTIC_AOSP
+            }
+        }
+        return when (val effect = preferences.getInt(KEY_GESTURE_HAPTIC_EFFECT, GESTURE_HAPTIC_AOSP)) {
+            GESTURE_HAPTIC_HYPEROS, GESTURE_HAPTIC_DISABLED -> effect
+            else -> GESTURE_HAPTIC_AOSP
+        }
+    }
 
     /** Only used to migrate the removed AOSP-specific switch once. */
     const val LEGACY_KEY_AOSP_HYPEROS_HAPTICS = "aosp_gesture_hyperos_haptics"

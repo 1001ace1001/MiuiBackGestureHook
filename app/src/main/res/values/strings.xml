@@ -62,6 +62,8 @@
     <string name="haptic_feedback_effect_aosp_summary">Use the native AOSP haptic effect</string>
     <string name="haptic_feedback_effect_hyperos">HyperOS</string>
     <string name="haptic_feedback_effect_hyperos_summary">Use the HyperOS haptic effect</string>
+    <string name="haptic_feedback_effect_disabled">Disable gesture vibration</string>
+    <string name="haptic_feedback_effect_disabled_summary">Disable threshold and release vibration for side back gestures</string>
     <string name="hyperos_haptics_enhanced_title">Enhanced release haptic</string>
     <string name="hyperos_haptics_enhanced_summary">Add one haptic on committed back</string>
     <string name="hyperos_haptics_enhanced_disabled_summary">Requires the HyperOS haptic effect</string>

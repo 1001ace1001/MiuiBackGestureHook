@@ -60,6 +60,8 @@
     <string name="haptic_feedback_effect_aosp_summary">使用 AOSP 原生震动效果</string>
     <string name="haptic_feedback_effect_hyperos">HyperOS</string>
     <string name="haptic_feedback_effect_hyperos_summary">使用 HyperOS 震动效果</string>
+    <string name="haptic_feedback_effect_disabled">禁用手势振动</string>
+    <string name="haptic_feedback_effect_disabled_summary">关闭侧边返回手势的阈值和松手振动</string>
     <string name="hyperos_haptics_enhanced_title">增强松手震感</string>
     <string name="hyperos_haptics_enhanced_summary">提交返回时追加一次松手震动</string>
     <string name="hyperos_haptics_enhanced_disabled_summary">依赖 HyperOS 震动方案</string>
