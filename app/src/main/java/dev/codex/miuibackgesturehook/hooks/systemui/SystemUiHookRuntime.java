@@ -1,5 +1,7 @@
 package dev.codex.miuibackgesturehook.hooks.systemui;
 
+import dev.codex.miuibackgesturehook.hooks.core.MiuiHomePackages;
+
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
@@ -6854,7 +6856,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                 "systemUiResponse", null);
         try {
             Intent nativeQuery = new Intent(systemUiInputArbiterStateAction())
-                    .setPackage(MIUI_HOME)
+                    .setPackage(miuiHomePackage(context))
                     .putExtra(EXTRA_STATUS_QUERY, true)
                     .putExtra(EXTRA_STATUS_NONCE, nonce)
                     .putExtra(EXTRA_INPUT_ARBITER_READY, ready)
@@ -7074,12 +7076,13 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
     protected boolean isTrustedMiuiHomeBroadcastSender(Context context, int uid,
                                                        String senderPackage) {
         if (context == null || uid == Process.INVALID_UID
-                || !MIUI_HOME.equals(senderPackage)) {
+                || !miuiHomePackage(context).equals(senderPackage)) {
             return false;
         }
         try {
             String[] packages = context.getPackageManager().getPackagesForUid(uid);
-            return packages != null && Arrays.asList(packages).contains(MIUI_HOME);
+            return MiuiHomePackages.isTrustedSender(
+                    miuiHomePackage(context), senderPackage, packages, Build.VERSION.SDK_INT);
         } catch (Throwable throwable) {
             moduleLog(Log.WARN, TAG, "Failed to validate launcher-state sender uid=" + uid,
                     throwable);

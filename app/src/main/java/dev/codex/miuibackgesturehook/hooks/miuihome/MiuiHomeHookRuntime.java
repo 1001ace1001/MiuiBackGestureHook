@@ -1,5 +1,7 @@
 package dev.codex.miuibackgesturehook.hooks.miuihome;
 
+import dev.codex.miuibackgesturehook.hooks.core.MiuiHomePackages;
+
 import android.annotation.SuppressLint;
 import android.app.BroadcastOptions;
 import android.app.KeyguardManager;
@@ -1702,7 +1704,7 @@ public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
                     || !(boundsObject instanceof Rect)
                     || ((Rect) boundsObject).isEmpty()
                     || component == null
-                    || MIUI_HOME.equals(component.getPackageName())
+                    || MiuiHomePackages.isSupportedPackage(component.getPackageName(), Build.VERSION.SDK_INT)
                     || PERMISSION_GRANT_ACTIVITY.equals(component)) {
                 return null;
             }
@@ -3075,7 +3077,7 @@ public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
         }
         Context appContext = context.getApplicationContext();
         Intent commandIntent = new Intent(MODULE_MIUI_HOME_OPEN_BREAK_COMMAND);
-        commandIntent.setPackage(MIUI_HOME);
+        commandIntent.setPackage(miuiHomePackage(context));
         commandIntent.putExtra(EXTRA_LAUNCHER_OPEN_BREAK_GENERATION, generation);
         commandIntent.putExtra(EXTRA_LAUNCHER_OPEN_BREAK_ATTEMPT, attemptId);
         Bundle options = BroadcastOptions.makeBasic()
@@ -3429,7 +3431,7 @@ public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
             boolean contextualSearchEnabled =
                     isContextualSearchLongPressRuntimeEnabled();
             Intent stateIntent = new Intent(systemUiInputArbiterStateAction());
-            stateIntent.setPackage(MIUI_HOME);
+            stateIntent.setPackage(miuiHomePackage(context));
             stateIntent.putExtra(EXTRA_INPUT_ARBITER_READY, ready);
             stateIntent.putExtra(EXTRA_INPUT_ARBITER_GENERATION,
                     systemUiInputArbiterGeneration);
@@ -3555,7 +3557,7 @@ public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
         }
         try {
             Intent intent = new Intent(MODULE_SYSTEMUI_INPUT_ARBITER_STATE);
-            intent.setPackage(MIUI_HOME);
+            intent.setPackage(miuiHomePackage(context));
             intent.putExtra(EXTRA_RETURN_HOME_COMMIT_ATTEMPT, attempt);
             putStandardReturnHomeSignal(intent, signal);
             Bundle options = BroadcastOptions.makeBasic()
@@ -3707,7 +3709,7 @@ public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
         }
         try {
             Intent intent = new Intent(MODULE_SYSTEMUI_INPUT_ARBITER_STATE);
-            intent.setPackage(MIUI_HOME);
+            intent.setPackage(miuiHomePackage(context));
             intent.putExtra(EXTRA_RETURN_HOME_FINISH_ATTEMPT,
                     signal.attempt);
             putStandardReturnHomeSignal(intent, signal);

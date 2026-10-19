@@ -94,9 +94,15 @@ The static LSPosed scope is:
 ```text
 com.android.systemui
 com.miui.home
+com.mi.android.globallauncher
 com.google.android.googlequicksearchbox
 system
 ```
+
+Android 16 also supports POCO Launcher (`com.mi.android.globallauncher`), which
+retains MiuiHome's Java class namespace. Broadcast authentication and indicator
+resources are bound to the selected launcher package. POCO support does not extend
+to Android 17 or newer; its Java launcher hooks stay disabled there.
 
 The Google App scope is used only when Live Translate is enabled. On Android 17
 and newer, MiuiHome must remain in scope so LSPosed can load the native entry

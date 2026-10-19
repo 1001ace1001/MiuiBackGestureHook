@@ -129,9 +129,18 @@ Current static scope:
 ```text
 com.android.systemui
 com.miui.home
+com.mi.android.globallauncher
 com.google.android.googlequicksearchbox
 system
 ```
+
+On Android 16, POCO Launcher (`com.mi.android.globallauncher`) may reuse the MiuiHome
+Java hooks while retaining the runtime `com.miui.home.*` class namespace. Bind launcher
+classification, explicit broadcast targets, sender-package/UID checks and indicator resources
+to one selected launcher package per process generation. Never trust both senders interchangeably.
+Keep Android 16 contextual-search platform calls authenticated as SystemUI. Android 17 and newer
+must also reject every POCO-process Java hook during cold load and hot reload; the existing native
+entry remains exclusive to `com.miui.home` and does not provide POCO support on those releases.
 
 Android 17 launcher safety rule:
 

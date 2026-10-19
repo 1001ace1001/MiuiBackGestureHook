@@ -59,7 +59,6 @@ final class MiuiStyleBackArrowOverlay {
     static final int EDGE_LEFT = 0;
     static final int EDGE_RIGHT = 1;
 
-    private static final String MIUI_HOME_PACKAGE = "com.miui.home";
     private static final String RESOURCE_BACKGROUND = "gesture_back_background";
     private static final String RESOURCE_ARROW = "gesture_back_arrow";
     // Maximum laterFriction(x, 0.8, 2.0, 0.5) value is 0.8 + (2.0 / 3.0) * 0.5.
@@ -69,6 +68,7 @@ final class MiuiStyleBackArrowOverlay {
     private static final int TYPE_NAVIGATION_BAR_PANEL = 2024;
 
     private final Context context;
+    private final String resourcePackage;
     private final Logger logger;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -92,8 +92,9 @@ final class MiuiStyleBackArrowOverlay {
     private HapticListener hapticListener;
     private boolean hapticsEnabledForGesture;
 
-    MiuiStyleBackArrowOverlay(Context context, Logger logger) {
+    MiuiStyleBackArrowOverlay(Context context, String resourcePackage, Logger logger) {
         this.context = context;
+        this.resourcePackage = resourcePackage;
         this.logger = logger;
     }
 
@@ -327,13 +328,13 @@ final class MiuiStyleBackArrowOverlay {
             return true;
         }
         try {
-            Context homeContext = context.createPackageContext(MIUI_HOME_PACKAGE,
+            Context homeContext = context.createPackageContext(resourcePackage,
                     Context.CONTEXT_IGNORE_SECURITY);
             Resources homeResources = homeContext.getResources();
             int backgroundId = homeResources.getIdentifier(
-                    RESOURCE_BACKGROUND, "drawable", MIUI_HOME_PACKAGE);
+                    RESOURCE_BACKGROUND, "drawable", resourcePackage);
             int arrowId = homeResources.getIdentifier(
-                    RESOURCE_ARROW, "drawable", MIUI_HOME_PACKAGE);
+                    RESOURCE_ARROW, "drawable", resourcePackage);
             if (backgroundId == 0 || arrowId == 0) {
                 throw new Resources.NotFoundException(
                         "backgroundId=" + backgroundId + ", arrowId=" + arrowId);

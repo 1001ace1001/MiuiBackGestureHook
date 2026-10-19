@@ -1,5 +1,7 @@
 package dev.codex.miuibackgesturehook.hooks.hotreload;
 
+import dev.codex.miuibackgesturehook.hooks.core.MiuiHomePackages;
+
 import static dev.codex.miuibackgesturehook.hooks.googleapp.GoogleAppRuntime.GOOGLE_APP;
 
 import android.content.Context;
@@ -613,7 +615,8 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
             pendingHotReloadContextualSearchNavigationBars = new Object[0];
             restoreContextualSearchInputReceivers(navigationBars);
         }
-        if (MIUI_HOME.equals(processName) && hotReloadClassLoader != null) {
+        if (MiuiHomePackages.isKnownPackage(processName)
+                && hotReloadClassLoader != null) {
             try {
                 Class<?> gestureStubClass = Class.forName(MIUI_HOME_GESTURE_STUB, false,
                         hotReloadClassLoader);
@@ -1157,14 +1160,16 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
     @Override
     public void onPackageLoaded(XposedModuleInterface.PackageLoadedParam param) {
         String loadedPackage = param.getPackageName();
-        if (MIUI_HOME.equals(loadedPackage) && blockMiuiHomeXposedHooks()) {
+        if (MiuiHomePackages.isKnownPackage(loadedPackage)
+                && blockMiuiHomeXposedHooks()) {
             processName = loadedPackage;
             moduleLog(Log.WARN, TAG,
                     "Skipped every MiuiHome LSPosed hook on Android 17"
                             + ", sourceDir=" + param.getApplicationInfo().sourceDir);
             return;
         }
-        if (SYSTEM_UI.equals(loadedPackage) || MIUI_HOME.equals(loadedPackage)
+        if (SYSTEM_UI.equals(loadedPackage)
+                || MiuiHomePackages.isKnownPackage(loadedPackage)
                 || processName == null) {
             processName = loadedPackage;
         }
@@ -1176,6 +1181,7 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                 installSystemUiHooks(param.getDefaultClassLoader());
                 break;
             case MIUI_HOME:
+            case POCO_HOME:
                 installMiuiHomeHooks(param.getDefaultClassLoader());
                 break;
             case GOOGLE_APP:

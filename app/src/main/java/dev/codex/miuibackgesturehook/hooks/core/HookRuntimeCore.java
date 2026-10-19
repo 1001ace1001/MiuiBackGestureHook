@@ -117,7 +117,8 @@ public abstract class HookRuntimeCore extends XposedModule {
     protected static final String BUILD_MARK =
             BuildConfig.VERSION_NAME + " (" + BuildConfig.VERSION_CODE + ")";
     protected static final String SYSTEM_UI = "com.android.systemui";
-    protected static final String MIUI_HOME = "com.miui.home";
+    protected static final String MIUI_HOME = MiuiHomePackages.MIUI;
+    protected static final String POCO_HOME = MiuiHomePackages.POCO;
     protected static final String MODULE_PACKAGE = NativeHookStatusProtocol.PACKAGE_NAME;
     protected static final String WINDOW_ON_BACK_INVOKED_DISPATCHER =
             WindowOnBackInvokedDispatcher.class.getName();
@@ -594,6 +595,26 @@ public abstract class HookRuntimeCore extends XposedModule {
                 }
             };
     protected String processName;
+    private volatile String resolvedMiuiHomePackage;
+
+    protected String miuiHomePackage(Context context) {
+        String packageName = resolvedMiuiHomePackage;
+        if (packageName == null) {
+            synchronized (this) {
+                packageName = resolvedMiuiHomePackage;
+                if (packageName == null) {
+                    try {
+                        packageName = MiuiHomePackages.resolve(context);
+                        resolvedMiuiHomePackage = packageName;
+                    } catch (Throwable throwable) {
+                        moduleLog(Log.WARN, TAG, "Could not resolve launcher package", throwable);
+                        return MIUI_HOME;
+                    }
+                }
+            }
+        }
+        return packageName;
+    }
 
     /**
      * Android 17 MiuiHome is protected from every LSPosed hook in this module. The package
@@ -605,8 +626,7 @@ public abstract class HookRuntimeCore extends XposedModule {
     }
 
     protected static boolean isMiuiHomeProcess(String candidate) {
-        return MIUI_HOME.equals(candidate)
-                || (candidate != null && candidate.startsWith(MIUI_HOME + ":"));
+        return MiuiHomePackages.isLauncherProcess(candidate);
     }
     protected boolean nativePluginDiagnosticsLogged;
     protected boolean headlessSysUiStateLogged;

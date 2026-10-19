@@ -1477,7 +1477,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                         + ", edge=" + edge);
                 return false;
             }
-            boolean launcherPackage = MIUI_HOME.equals(topActivity.getPackageName());
+            boolean launcherPackage = miuiHomePackage(context).equals(topActivity.getPackageName());
             boolean launcherHome = launcherPackage
                     && isLauncherHomeComponent(topActivity);
             boolean launcherShade = launcherHome && displayId == 0
@@ -1831,12 +1831,12 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                 Intent homeIntent = new Intent(Intent.ACTION_MAIN)
                         .addCategory(displayId == 0
                                 ? Intent.CATEGORY_HOME : Intent.CATEGORY_SECONDARY_HOME)
-                        .setPackage(MIUI_HOME);
+                        .setPackage(miuiHomePackage(context));
                 ResolveInfo resolved = context.getPackageManager().resolveActivity(
                         homeIntent,
                         PackageManager.ResolveInfoFlags.of(PackageManager.MATCH_DEFAULT_ONLY));
                 ActivityInfo activityInfo = resolved == null ? null : resolved.activityInfo;
-                if (activityInfo == null || !MIUI_HOME.equals(activityInfo.packageName)) {
+                if (activityInfo == null || !miuiHomePackage(context).equals(activityInfo.packageName)) {
                     // Preserve the old fail-closed Home behavior when package resolution is
                     // unexpectedly unavailable. Pilfering a real launcher Home stream is worse
                     // than declining a sibling Activity until the resolution fault is known.
@@ -4554,7 +4554,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
             }
             try {
                 if (miuiStyleOverlay == null) {
-                    miuiStyleOverlay = new MiuiStyleBackArrowOverlay(context,
+                    miuiStyleOverlay = new MiuiStyleBackArrowOverlay(context, miuiHomePackage(context),
                             (priority, message, throwable) -> {
                                 if (throwable == null) {
                                     moduleLog(priority, TAG, message);
