@@ -47,6 +47,7 @@ import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,6 +84,7 @@ import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -538,10 +540,10 @@ private fun PredictiveBackSettingsScreen(
         mutableStateOf(PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR)
     }
     var gestureHapticEffect by remember {
-        mutableStateOf(PredictiveBackPreferences.GESTURE_HAPTIC_AOSP)
+        mutableIntStateOf(PredictiveBackPreferences.GESTURE_HAPTIC_AOSP)
     }
     var confirmedGestureHapticEffect by remember {
-        mutableStateOf(PredictiveBackPreferences.GESTURE_HAPTIC_AOSP)
+        mutableIntStateOf(PredictiveBackPreferences.GESTURE_HAPTIC_AOSP)
     }
     var hyperOsHapticsEnhanced by remember { mutableStateOf(false) }
     var confirmedHyperOsHapticsEnhanced by remember { mutableStateOf(false) }
@@ -556,6 +558,12 @@ private fun PredictiveBackSettingsScreen(
     }
     var confirmedFullscreenDirectBack by remember {
         mutableStateOf(PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK)
+    }
+    var restoreStatusBarFollow by remember {
+        mutableStateOf(PredictiveBackPreferences.DEFAULT_RESTORE_STATUS_BAR_FOLLOW)
+    }
+    var confirmedRestoreStatusBarFollow by remember {
+        mutableStateOf(PredictiveBackPreferences.DEFAULT_RESTORE_STATUS_BAR_FOLLOW)
     }
     val writeMutex = remember(preferences) { Mutex() }
     val lazyListState = rememberLazyListState()
@@ -586,6 +594,9 @@ private fun PredictiveBackSettingsScreen(
         confirmedModuleLogging = PredictiveBackPreferences.DEFAULT_MODULE_LOGGING
         fullscreenDirectBack = PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK
         confirmedFullscreenDirectBack = PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK
+        restoreStatusBarFollow = PredictiveBackPreferences.DEFAULT_RESTORE_STATUS_BAR_FOLLOW
+        confirmedRestoreStatusBarFollow =
+            PredictiveBackPreferences.DEFAULT_RESTORE_STATUS_BAR_FOLLOW
         if (!serviceStateObserved) {
             configurationLoading = true
             return@LaunchedEffect
@@ -617,18 +628,19 @@ private fun PredictiveBackSettingsScreen(
                             remove(PredictiveBackPreferences.LEGACY_KEY_AOSP_HYPEROS_HAPTICS)
                             migrated = commit()
                         }
-                        if (migrated) true else storedHyperOsHaptics
+                        migrated || storedHyperOsHaptics
                     } catch (_: Throwable) {
                         storedHyperOsHaptics
                     }
                 }
-                val hapticEffect = if (remotePreferences.contains(PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT)) {
-                    PredictiveBackPreferences.readGestureHapticEffect(remotePreferences)
-                } else if (unifiedHyperOsHaptics) {
-                    PredictiveBackPreferences.GESTURE_HAPTIC_HYPEROS
-                } else {
-                    PredictiveBackPreferences.GESTURE_HAPTIC_AOSP
-                }
+                val hapticEffect =
+                    if (remotePreferences.contains(PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT)) {
+                        PredictiveBackPreferences.readGestureHapticEffect(remotePreferences)
+                    } else if (unifiedHyperOsHaptics) {
+                        PredictiveBackPreferences.GESTURE_HAPTIC_HYPEROS
+                    } else {
+                        PredictiveBackPreferences.GESTURE_HAPTIC_AOSP
+                    }
                 val flags = booleanArrayOf(
                     remotePreferences.getBoolean(
                         PredictiveBackPreferences.KEY_HYPEROS_INDICATOR,
@@ -658,6 +670,10 @@ private fun PredictiveBackSettingsScreen(
                         PredictiveBackPreferences.KEY_HYPEROS_INDICATOR_BLUR,
                         PredictiveBackPreferences.DEFAULT_HYPEROS_INDICATOR_BLUR,
                     ),
+                    remotePreferences.getBoolean(
+                        PredictiveBackPreferences.KEY_RESTORE_STATUS_BAR_FOLLOW,
+                        PredictiveBackPreferences.DEFAULT_RESTORE_STATUS_BAR_FOLLOW,
+                    ),
                 )
                 Triple(remotePreferences, flags, hapticEffect)
             }
@@ -678,6 +694,8 @@ private fun PredictiveBackSettingsScreen(
             confirmedFullscreenDirectBack = loaded.second[5]
             hyperOsIndicatorBlur = loaded.second[6]
             confirmedHyperOsIndicatorBlur = loaded.second[6]
+            restoreStatusBarFollow = loaded.second[7]
+            confirmedRestoreStatusBarFollow = loaded.second[7]
         } catch (_: Throwable) {
             configurationError = configurationErrorMessage
         } finally {
@@ -754,7 +772,10 @@ private fun PredictiveBackSettingsScreen(
                         var succeeded = false
                         try {
                             activePreferences.edit(commit = true) {
-                                putInt(PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT, requestedEffect)
+                                putInt(
+                                    PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT,
+                                    requestedEffect
+                                )
                                 succeeded = commit()
                             }
                         } catch (_: Throwable) {
@@ -763,7 +784,10 @@ private fun PredictiveBackSettingsScreen(
                         if (!succeeded) {
                             try {
                                 activePreferences.edit(commit = true) {
-                                    putInt(PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT, fallbackEffect)
+                                    putInt(
+                                        PredictiveBackPreferences.KEY_GESTURE_HAPTIC_EFFECT,
+                                        fallbackEffect
+                                    )
                                     commit()
                                 }
                             } catch (_: Throwable) {
@@ -836,6 +860,15 @@ private fun PredictiveBackSettingsScreen(
             { fullscreenDirectBack = it },
             { confirmedFullscreenDirectBack },
             { confirmedFullscreenDirectBack = it },
+        )
+    }
+    val persistRestoreStatusBarFollow: (Boolean) -> Unit = { requestedEnabled ->
+        persistBooleanPreference(
+            PredictiveBackPreferences.KEY_RESTORE_STATUS_BAR_FOLLOW,
+            requestedEnabled,
+            { restoreStatusBarFollow = it },
+            { confirmedRestoreStatusBarFollow },
+            { confirmedRestoreStatusBarFollow = it },
         )
     }
     val statusMessage = when {
@@ -914,14 +947,18 @@ private fun PredictiveBackSettingsScreen(
                         .padding(bottom = 8.dp),
                 )
             }
-            item(key = "hyperos_switches") {
-                HyperOsSwitchGroupCard(
+            item(key = "side_gesture_title") {
+                SmallTitle(text = stringResource(R.string.side_gesture_group_title))
+            }
+            item(key = "side_gesture") {
+                SideGestureGroupCard(
                     hyperOsIndicator = hyperOsIndicator,
                     hyperOsIndicatorBlur = hyperOsIndicatorBlur,
                     gestureHapticEffect = gestureHapticEffect,
                     hyperOsHapticsEnhanced = hyperOsHapticsEnhanced,
                     hyperOsSlideAnimation = hyperOsSlideAnimation,
                     oneUiCrossTaskAnimation = oneUiCrossTaskAnimation,
+                    fullscreenDirectBack = fullscreenDirectBack,
                     configurationEnabled = configurationEnabled,
                     onHyperOsIndicatorToggle = persistHyperOsIndicator,
                     onHyperOsIndicatorBlurToggle = persistHyperOsIndicatorBlur,
@@ -929,6 +966,43 @@ private fun PredictiveBackSettingsScreen(
                     onHyperOsHapticsEnhancedToggle = persistHyperOsHapticsEnhanced,
                     onHyperOsSlideAnimationToggle = persistHyperOsSlideAnimation,
                     onOneUiCrossTaskAnimationToggle = persistOneUiCrossTaskAnimation,
+                    onFullscreenDirectBackToggle = persistFullscreenDirectBack,
+                    onOpenGestureTriggerSettings = onOpenGestureTriggerSettings,
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 8.dp)
+                        .fillMaxWidth(),
+                )
+            }
+            item(key = "gesture_handle_title") {
+                SmallTitle(text = stringResource(R.string.gesture_handle_group_title))
+            }
+            item(key = "contextual_search") {
+                ContextualSearchNavigationCard(
+                    onClick = onOpenContextualSearchSettings,
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp)
+                        .padding(bottom = 8.dp),
+                )
+            }
+            if (Build.VERSION.SDK_INT == 37) {
+                item(key = "status_bar_title") {
+                    SmallTitle(text = stringResource(R.string.status_bar_group_title))
+                }
+                item(key = "status_bar") {
+                    StatusBarGroupCard(
+                        enabled = restoreStatusBarFollow,
+                        configurationEnabled = configurationEnabled,
+                        onToggle = persistRestoreStatusBarFollow,
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 12.dp),
+                    )
+                }
+            }
+            item(key = "app_list_navigation") {
+                AppListNavigationCard(
+                    onClick = onOpenAppList,
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 8.dp),
@@ -939,34 +1013,6 @@ private fun PredictiveBackSettingsScreen(
                     moduleLogging = moduleLogging,
                     configurationEnabled = configurationEnabled,
                     onModuleLoggingToggle = persistModuleLogging,
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 8.dp),
-                )
-            }
-            item(key = "contextual_search") {
-                ContextualSearchNavigationCard(
-                    onClick = onOpenContextualSearchSettings,
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 8.dp),
-                )
-            }
-            item(key = "gesture_behavior") {
-                GestureBehaviorGroupCard(
-                    fullscreenDirectBack = fullscreenDirectBack,
-                    configurationEnabled = configurationEnabled,
-                    onFullscreenDirectBackToggle = persistFullscreenDirectBack,
-                    onOpenGestureTriggerSettings = onOpenGestureTriggerSettings,
-                    modifier = Modifier
-                        .padding(horizontal = 12.dp)
-                        .padding(bottom = 8.dp)
-                        .fillMaxWidth(),
-                )
-            }
-            item(key = "app_list_navigation") {
-                AppListNavigationCard(
-                    onClick = onOpenAppList,
                     modifier = Modifier
                         .padding(horizontal = 12.dp)
                         .padding(bottom = 8.dp),
@@ -1016,13 +1062,14 @@ private fun cardAccentColor(severity: SettingsCardSeverity): Color = when (sever
 }
 
 @Composable
-private fun HyperOsSwitchGroupCard(
+private fun SideGestureGroupCard(
     hyperOsIndicator: Boolean,
     hyperOsIndicatorBlur: Boolean,
     gestureHapticEffect: Int,
     hyperOsHapticsEnhanced: Boolean,
     hyperOsSlideAnimation: Boolean,
     oneUiCrossTaskAnimation: Boolean,
+    fullscreenDirectBack: Boolean,
     configurationEnabled: Boolean,
     onHyperOsIndicatorToggle: (Boolean) -> Unit,
     onHyperOsIndicatorBlurToggle: (Boolean) -> Unit,
@@ -1030,11 +1077,13 @@ private fun HyperOsSwitchGroupCard(
     onHyperOsHapticsEnhancedToggle: (Boolean) -> Unit,
     onHyperOsSlideAnimationToggle: (Boolean) -> Unit,
     onOneUiCrossTaskAnimationToggle: (Boolean) -> Unit,
+    onFullscreenDirectBackToggle: (Boolean) -> Unit,
+    onOpenGestureTriggerSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val hyperOsHaptics = gestureHapticEffect == PredictiveBackPreferences.GESTURE_HAPTIC_HYPEROS
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier,
         insideMargin = PaddingValues(0.dp),
     ) {
         WindowSpinnerPreference(
@@ -1125,38 +1174,6 @@ private fun HyperOsSwitchGroupCard(
             enabled = configurationEnabled,
             onCheckedChange = onOneUiCrossTaskAnimationToggle,
         )
-    }
-}
-
-@Composable
-private fun AppListNavigationCard(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        insideMargin = PaddingValues(0.dp),
-    ) {
-        ArrowPreference(
-            title = stringResource(R.string.predictive_back_apps_entry_title),
-            summary = stringResource(R.string.predictive_back_apps_entry_summary),
-            onClick = onClick,
-        )
-    }
-}
-
-@Composable
-private fun GestureBehaviorGroupCard(
-    fullscreenDirectBack: Boolean,
-    configurationEnabled: Boolean,
-    onFullscreenDirectBackToggle: (Boolean) -> Unit,
-    onOpenGestureTriggerSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Card(
-        modifier = modifier,
-        insideMargin = PaddingValues(0.dp),
-    ) {
         ArrowPreference(
             title = stringResource(R.string.gesture_trigger_entry_title),
             summary = stringResource(R.string.gesture_trigger_entry_summary),
@@ -1186,6 +1203,44 @@ private fun GestureBehaviorGroupCard(
             onSelectedIndexChange = { selectedIndex ->
                 onFullscreenDirectBackToggle(selectedIndex == 1)
             },
+        )
+    }
+}
+
+@Composable
+private fun StatusBarGroupCard(
+    enabled: Boolean,
+    configurationEnabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(0.dp),
+    ) {
+        SwitchPreference(
+            title = stringResource(R.string.restore_status_bar_follow_title),
+            summary = stringResource(R.string.restore_status_bar_follow_summary),
+            checked = enabled,
+            enabled = configurationEnabled,
+            onCheckedChange = onToggle,
+        )
+    }
+}
+
+@Composable
+private fun AppListNavigationCard(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(0.dp),
+    ) {
+        ArrowPreference(
+            title = stringResource(R.string.predictive_back_apps_entry_title),
+            summary = stringResource(R.string.predictive_back_apps_entry_summary),
+            onClick = onClick,
         )
     }
 }

@@ -69,8 +69,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
 import io.github.libxposed.api.XposedInterface;
 
+import dev.codex.miuibackgesturehook.hooks.systemui.barfollow.StatusBarAppearanceInputs;
+import dev.codex.miuibackgesturehook.hooks.systemui.barfollow.SystemUiBarFollowRuntime;
+import dev.codex.miuibackgesturehook.hooks.systemui.platform.SystemUiAndroid16Impl;
+import dev.codex.miuibackgesturehook.hooks.systemui.platform.SystemUiAndroid17Impl;
+import dev.codex.miuibackgesturehook.hooks.systemui.platform.SystemUiPlatformImpl;
+
 @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
-public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
+public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
+    protected static final String STATUS_BAR_TRANSIENT_ARRAY = "systemui_status_bar_transient_appearance_array";
 
     private volatile SystemUiPlatformImpl systemUiPlatformImpl;
     private volatile SharedPreferences contextualSearchStatePreferences;
@@ -106,6 +113,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
     protected void installSystemUiHooks(ClassLoader classLoader) {
         try {
             selectSystemUiPlatformImpl(classLoader);
+            hookRecentsBarFollow(classLoader, java.util.Collections.emptySet());
             hookContextualSearchNavigationBar(classLoader, true, true);
             Context systemUiContext = resolveCurrentApplicationContext(classLoader);
             if (systemUiContext != null) {
@@ -1497,21 +1505,73 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
 
     protected void hookStatusBarTransientAppearance(ClassLoader classLoader) {
         try {
-            Class<?> appearanceClass = Class.forName(
-                    STATUS_BAR_APPEARANCE_LAMBDA, false, classLoader);
-            Method method = findAnyMethod(appearanceClass, "invoke", 6);
-            if (method == null) {
-                throw new NoSuchMethodException(STATUS_BAR_APPEARANCE_LAMBDA + ".invoke/6");
+            Method method;
+            String id;
+            XposedInterface.Hooker callback;
+            try {
+                Class<?> appearanceClass = Class.forName(STATUS_BAR_APPEARANCE_LAMBDA, false, classLoader);
+                method = findAnyMethod(appearanceClass, "invoke", 6);
+                if (method == null) throw new NoSuchMethodException(STATUS_BAR_APPEARANCE_LAMBDA + ".invoke/6");
+                id = "systemui_status_bar_transient_appearance";
+                callback = this::preserveTransientBarAppearance;
+            } catch (ClassNotFoundException absent) {
+                method = resolveStatusBarAppearanceArray(classLoader);
+                id = STATUS_BAR_TRANSIENT_ARRAY;
+                callback = this::preserveTransientStatusBarAppearanceArray;
             }
             method.setAccessible(true);
-            recordHookHandle(hook(method)
-                    .setId("systemui_status_bar_transient_appearance")
-                    .intercept(this::preserveTransientBarAppearance));
+            recordHookHandle(hook(method).setId(id).intercept(callback));
             moduleLog(Log.INFO, TAG, "Hooked status-bar transient appearance reducer");
         } catch (Throwable throwable) {
             moduleLog(Log.ERROR, TAG,
                     "Failed to hook status-bar transient appearance", throwable);
         }
+    }
+
+    private Method resolveStatusBarAppearanceArray(ClassLoader loader) throws Throwable {
+        String repository = "com.android.systemui.statusbar.data.repository.StatusBarModePerDisplayRepositoryImpl";
+        Class<?> owner = Class.forName(repository, false, loader);
+        Class<?> model = Class.forName("com.android.systemui.statusbar.data.model.StatusBarAppearance", false, loader);
+        Field mode = model.getDeclaredField("mode");
+        Method result = null;
+        systemUiDexResolutionInFlight.incrementAndGet();
+        try {
+            ensureDexKitLibraryLoaded();
+            try (DexKitBridge dex = DexKitBridge.create(resolveDexContainerForLoadedClass(owner))) {
+                for (MethodData candidate : dex.findMethod(FindMethod.create()
+                        .searchPackages("com.android.systemui.statusbar.data.repository")
+                        .matcher(MethodMatcher.create().name("invokeSuspend").paramCount(1)))) {
+                    boolean writesMode = false;
+                    for (org.luckypray.dexkit.result.UsingFieldData field : candidate.getUsingFields())
+                        if (field.getUsingType() == org.luckypray.dexkit.result.FieldUsingType.Write
+                                && field.getField().getFieldInstance(loader).equals(mode)) writesMode = true;
+                    if (!writesMode) continue;
+                    Class<?> reducer = candidate.getMethodInstance(loader).getDeclaringClass();
+                    if (!reducer.getName().startsWith(repository + "$")
+                            || reducer.getDeclaredField("this$0").getType() != owner
+                            || reducer.getDeclaredField("L$1").getType() != Object.class
+                            || reducer.getDeclaredField("label").getType() != int.class) continue;
+                    Method invoke = reducer.getDeclaredMethod("invoke", Object.class, Object.class, Object.class);
+                    if (invoke.getReturnType() != Object.class) continue;
+                    if (result != null) throw new NoSuchMethodException("Ambiguous native status appearance reducer");
+                    result = invoke;
+                }
+            }
+        } finally { systemUiDexResolutionInFlight.decrementAndGet(); }
+        if (result == null) throw new NoSuchMethodException("Native status appearance array reducer");
+        return result;
+    }
+
+    protected Object preserveTransientStatusBarAppearanceArray(XposedInterface.Chain chain) throws Throwable {
+        Class<?> attributes = Class.forName("com.android.systemui.statusbar.data.repository."
+                + "StatusBarModePerDisplayRepositoryImpl$ModifiedStatusBarAttributes", false,
+                chain.getExecutable().getDeclaringClass().getClassLoader());
+        Object original = chain.getArg(1);
+        Object corrected = StatusBarAppearanceInputs.withoutTransient(original, attributes);
+        if (corrected == original) return chain.proceed();
+        Object[] args = chain.getArgs().toArray();
+        args[1] = corrected;
+        return chain.proceed(args);
     }
 
     protected Object preserveTransientBarAppearance(XposedInterface.Chain chain)
@@ -2481,9 +2541,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
             preparedBackStartAnimationInvoker;
     protected volatile boolean preparedBackTargetArrivalHookReady;
     protected volatile boolean preparedBackTerminalHookReady;
-    protected final AtomicInteger systemUiDexResolutionInFlight =
-            new AtomicInteger();
-    private volatile String preparedBackRunnerDexContainer;
+    private final java.util.Map<Class<?>, String> loadedDexContainers = new java.util.concurrent.ConcurrentHashMap<>();
 
     protected void hookPreparedBackTargetArrival(ClassLoader classLoader) {
         try {
@@ -2564,9 +2622,14 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
         return resolved;
     }
 
+    @Override
+    protected String resolveBarFollowDexContainer(Class<?> targetClass) throws Throwable {
+        return resolveDexContainerForLoadedClass(targetClass);
+    }
+
     private String resolveDexContainerForLoadedClass(Class<?> targetClass)
             throws Throwable {
-        String cached = preparedBackRunnerDexContainer;
+        String cached = loadedDexContainers.get(targetClass);
         if (cached != null && !cached.isEmpty()) {
             return cached;
         }
@@ -2609,7 +2672,7 @@ public abstract class SystemUiHookRuntime extends SystemUiInputRuntime {
                             + ", found=" + matches);
         }
         cached = matches.get(0);
-        preparedBackRunnerDexContainer = cached;
+        loadedDexContainers.put(targetClass, cached);
         moduleLog(Log.INFO, TAG,
                 "Resolved prepared-back runner dex container=" + cached);
         return cached;

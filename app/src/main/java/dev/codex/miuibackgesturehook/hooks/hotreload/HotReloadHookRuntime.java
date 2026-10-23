@@ -118,6 +118,14 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                             + activeReturnHomeController.describeUnifiedOwner());
             return false;
         }
+        if (!reserveRecentsBarReload()) {
+            moduleLog(Log.INFO, TAG, "Deferred hot reload until recents bar cleanup completes");
+            return false;
+        }
+        if (!reserveServerBarReload()) {
+            moduleLog(Log.INFO, TAG, "Deferred hot reload until native bar restoration commits");
+            return false;
+        }
         moduleLog(Log.INFO, TAG, "Hot reloading, build=" + BUILD_MARK
                 + ", process=" + processName
                 + ", hooks=" + hookHandles.size());
@@ -141,6 +149,7 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
         boolean savedMiuiHomeOpenBreakCommandPending =
                 miuiHomeOpenBreakCommandPending;
         cancelOneUiCrossTaskForHotReload();
+        detachRecentsBarFollow();
         miuiHomeLocalHandoffToken.set(null);
         invalidateMiuiHomeLauncherOpenSnapshot(null, "hotReload");
         IBinder savedMiuiHomeReturnHomeBinder =
@@ -213,13 +222,17 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                 Boolean.valueOf(savedMiuiLauncherEditing),
                 Boolean.valueOf(savedMiuiFolderVisible),
                 savedContextualSearchNavigationBars,
-                Long.valueOf(savedMiuiLauncherDartStateOwnerEpoch)
+                Long.valueOf(savedMiuiLauncherDartStateOwnerEpoch),
+                saveServerBarRetiredOwners()
         });
         return true;
     }
 
     @Override
     public void onHotReloaded(XposedModuleInterface.HotReloadedParam param) {
+        // Restore the deny state before replacing old callback hooks. No old
+        // callback may borrow a new module runtime's empty lifetime registry.
+        restoreServerBarRetiredOwners(param.getSavedInstanceState());
         String reportedProcessName = param.getProcessName();
         boolean hadMiuiHomeHook = false;
         for (XposedInterface.HookHandle oldHandle : param.getOldHookHandles()) {
@@ -415,6 +428,8 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                 }
                 hookSecuritySidebarTransientBars(serverClassLoader, oldHookIds);
                 hookContextualSearchCompatibility(serverClassLoader, oldHookIds);
+                hookServerBarLifetime(serverClassLoader, oldHookIds);
+                restoreServerBarOwnerAfterHotReload(serverClassLoader);
             }
         }
         if (SYSTEM_UI.equals(processName) && hotReloadClassLoader != null) {
@@ -529,9 +544,11 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
             if (!oldHookIds.contains("systemui_navigation_bar_transient_appearance")) {
                 hookNavigationBarTransientAppearance(hotReloadClassLoader);
             }
-            if (!oldHookIds.contains("systemui_status_bar_transient_appearance")) {
+            if (!oldHookIds.contains("systemui_status_bar_transient_appearance")
+                    && !oldHookIds.contains(STATUS_BAR_TRANSIENT_ARRAY)) {
                 hookStatusBarTransientAppearance(hotReloadClassLoader);
             }
+            hookRecentsBarFollow(hotReloadClassLoader, oldHookIds);
             if (!oldHookIds.contains(
                     "systemui_a17_back_background_status_reset")) {
                 hookPlatformBackAnimationStatusBarReset(hotReloadClassLoader);
@@ -816,7 +833,67 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
         }
         XposedInterface.Hooker googleHooker = googleApp.replacement(hookId);
         if (googleHooker != null) return googleHooker;
+        if (hookId.startsWith(SERVER_BAR_STATE_PREFIX)) return this::dispatchServerBarStateCall;
+        if (hookId.startsWith(SERVER_BAR_MUTATION_PREFIX)) return this::dispatchServerBarMutation;
+        if (hookId.startsWith(SERVER_BAR_CALLBACK_CREATE_PREFIX)) return this::createServerBarSynthetic;
+        if (hookId.startsWith(SERVER_BAR_CALLBACK_RUN_PREFIX)) return this::dispatchServerBarSynthetic;
         switch (hookId) {
+            case SERVER_BAR_BRIDGE_READY: return this::serverBarBridgeReady;
+            case SERVER_BAR_FEATURE: return this::serverBarOwnedFeature;
+            // Retired speculative routing override; restore native A16/A17 policy.
+            case SERVER_BAR_APPEARANCE_OWNER: return XposedInterface.Chain::proceed;
+            case "systemui_recents_bar_follow_prepare":
+                // Retired Hyper-only entry: the common entry now owns preparation.
+                return XposedInterface.Chain::proceed;
+            case BAR_FOLME_UPDATE:
+                return this::observeBarFolmeUpdate;
+            case BAR_VIEW_INIT:
+                return this::initializeAppBarView;
+            case BAR_VIEW_DRIP:
+                return this::updateAppBarDrip;
+            case BAR_VIEW_FACTORY:
+                return this::configureAppBarViewFactory;
+            case BAR_DARK_STATE:
+                return this::provideAppBarDarkState;
+            case BAR_APP_APPEARANCE:
+                return this::applyAppWindowAppearance;
+            case BAR_APP_TINT_ANIMATION:
+                return this::gateAppBarTintAnimation;
+            case BAR_PRIVACY_ROLE:
+                return this::gateAppBarPrivacy;
+            case BAR_PRIVACY_PROMPT:
+                return this::gateAppBarPrivacyPrompt;
+            case BAR_NOTIFICATION_ROLE:
+                return this::gateBarNotificationAnimation;
+            case BAR_ISLAND_ROLE:
+                return this::gateBarIslandAnimation;
+            case BAR_SHOW_ROLE:
+            case BAR_HIDE_ROLE:
+            case BAR_CLOCK_SHOW_ROLE:
+            case BAR_CLOCK_HIDE_ROLE:
+                return this::gateAppBarAnimation;
+            case BAR_TASK_PENDING:
+            case BAR_TASK_STARTING:
+            case BAR_TASK_CANCELLED:
+            case BAR_TASK_FINISHED:
+                return this::observeShadeBarEvent;
+            case BAR_FOLME_COMPLETE:
+                return this::observeBarFolmeComplete;
+            case BAR_FOLME_CANCEL:
+                return this::observeBarFolmeCancel;
+            case BAR_STATE:
+                return this::stateRecentsBarFollow;
+            case BAR_REUSE_BIND:
+                // Retired: publication is not retirement of Launcher's delivered callback.
+                return XposedInterface.Chain::proceed;
+            case BAR_REUSE_DIRECTION:
+                return this::handoffRecentsBarReuse;
+            case BAR_PREPARE:
+                return this::prepareRecentsBarFollow;
+            case BAR_START:
+                return this::startRecentsBarFollow;
+            case BAR_CLEANUP:
+                return this::cleanupRecentsBarFollow;
             case "systemui_block_miui_gesture_line_progress":
                 return this::interceptMiuiOverviewProxyTransact;
             case "systemui_contextual_search_nav_attach":
@@ -826,6 +903,8 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
             case "systemui_navigation_bar_transient_appearance":
             case "systemui_status_bar_transient_appearance":
                 return this::preserveTransientBarAppearance;
+            case STATUS_BAR_TRANSIENT_ARRAY:
+                return this::preserveTransientStatusBarAppearanceArray;
             case "systemui_navigation_bar_show_transient":
                 return this::preserveTransientBarAutoHide;
             case "server_fullscreen_side_swipe_left":
@@ -911,6 +990,18 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                 return this::observeMiuiHomeReturnHomeWallpaperSet;
             case "miui_home_return_home_wallpaper_anim":
                 return this::observeMiuiHomeReturnHomeWallpaperAnim;
+            case SERVER_BAR_LISTENER_CREATE:
+                return this::createServerBarListener;
+            case SERVER_BAR_LISTENER_UPDATE:
+                return this::dispatchServerBarListener;
+            case SERVER_BAR_START_CREATE:
+                return this::createServerBarStart;
+            case SERVER_BAR_START_RUN:
+                return this::dispatchServerBarStart;
+            case SERVER_BAR_STATE_CREATE:
+                return this::createServerBarStart;
+            case SERVER_BAR_STATE_RUN:
+                return this::dispatchServerBarState;
             case "server_back_window_start_animation":
                 return this::prepareOpeningTaskFragment;
             case "server_a17_opening_surface_visibility":

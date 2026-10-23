@@ -319,7 +319,8 @@ echo "$size"
         return self.invoke_root(f"cat {quoted}", allow_failure=True).text
 
     def wait_api102_hot_reload(
-        self, expected_systemui_pid: int, log_before: LogSnapshot
+        self, expected_systemui_pid: int, log_before: LogSnapshot,
+        retry_apk: Path | None = None,
     ) -> str:
         for _ in range(100):
             current_systemui_pid = self.get_systemui_pid()
@@ -341,6 +342,20 @@ echo "$size"
             if re.search(r"Hot reloaded, build=.*process=com\.android\.systemui", delta):
                 return delta
             time.sleep(0.2)
+        if (retry_apk is not None
+                and "Deferred hot reload until recents bar cleanup completes" in delta
+                and "App bar cleanup still pending; retaining owner" not in delta):
+            # API-102 rejects this install while the old runtime posts its
+            # Main-owned cleanup. It does not automatically retry after cleanup.
+            # One whole-APK reinstall triggers a fresh lifecycle attempt; never
+            # restart SystemUI or replace the spawner before completion proof.
+            if self.get_systemui_pid() != expected_systemui_pid:
+                raise RuntimeError("SystemUI changed before deferred-reload retry.")
+            retry_log = self.get_lsposed_log_snapshot()
+            self.emit("api102_hot_reload=retry-once-after-deferred-bar-cleanup")
+            self.install_apk(retry_apk, enable_rollback=True)
+            self.wait_for_device_connection()
+            return self.wait_api102_hot_reload(expected_systemui_pid, retry_log)
         raise RuntimeError(
             "No fresh SystemUI API-102 hot-reload completion appeared within 20 seconds."
         )
@@ -790,6 +805,7 @@ done
         variant: str,
         skip_build: bool,
         skip_rollback_backup: bool = False,
+        no_hot_reload_retry: bool = False,
     ) -> None:
         self.assert_no_foreign_native_owner()
         deployment_apk = self.resolve_deployment_apk(apk, variant, skip_build)
@@ -841,7 +857,16 @@ done
             installed = self.get_remote_apk_identity(installed_path)
             if installed.sha256 != local_hash:
                 raise RuntimeError(f"Installed APK hash mismatch: {installed.sha256}")
-            self.wait_api102_hot_reload(systemui_before, log_before)
+            self.wait_api102_hot_reload(
+                systemui_before, log_before, None if no_hot_reload_retry else deployment_apk
+            )
+            # A deferred-reload retry may give PackageManager a fresh APK inode.
+            installed_path = self.get_installed_apk_path()
+            if not installed_path:
+                raise RuntimeError("Active APK disappeared after API-102 reload.")
+            installed = self.get_remote_apk_identity(installed_path)
+            if installed.sha256 != local_hash:
+                raise RuntimeError("Installed APK changed during API-102 reload.")
 
             if self.get_exact_spawner_pid() != spawner_before:
                 raise RuntimeError(
@@ -903,6 +928,10 @@ def parse_args(arguments: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--apk")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-rollback-backup", action="store_true")
+    parser.add_argument(
+        "--no-hot-reload-retry", action="store_true",
+        help="Require API-102 reload from one APK install; do not reinstall after deferred cleanup.",
+    )
     return parser.parse_args(arguments)
 
 
@@ -923,6 +952,7 @@ def main(arguments: Sequence[str] | None = None) -> int:
                 args.variant,
                 args.skip_build,
                 args.skip_rollback_backup,
+                args.no_hot_reload_retry,
             )
         return 0
     except Exception as error:

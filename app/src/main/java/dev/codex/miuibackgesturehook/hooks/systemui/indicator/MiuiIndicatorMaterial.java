@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-package dev.codex.miuibackgesturehook.hooks.systemui;
+package dev.codex.miuibackgesturehook.hooks.systemui.indicator;
 
 import android.annotation.SuppressLint;
 import android.graphics.Path;

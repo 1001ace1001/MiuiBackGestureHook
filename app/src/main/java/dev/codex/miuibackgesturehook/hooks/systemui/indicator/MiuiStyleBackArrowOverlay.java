@@ -1,4 +1,4 @@
-package dev.codex.miuibackgesturehook.hooks.systemui;
+package dev.codex.miuibackgesturehook.hooks.systemui.indicator;
 
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
@@ -42,9 +42,9 @@ import androidx.annotation.NonNull;
  * run on the main Looper except {@link #detach()}, which reposts itself.
  */
 @SuppressLint("DiscouragedApi")
-final class MiuiStyleBackArrowOverlay {
+public final class MiuiStyleBackArrowOverlay {
 
-    interface Logger {
+    public interface Logger {
         void log(int priority, String message, Throwable throwable);
     }
 
@@ -52,7 +52,7 @@ final class MiuiStyleBackArrowOverlay {
      * Fired when the arrow finishes its 100ms fade-in, matching Xiaomi's
      * ready-back haptic timing in GestureBackArrowView.
      */
-    interface HapticListener {
+    public interface HapticListener {
         void onArrowReady();
     }
 
@@ -92,27 +92,27 @@ final class MiuiStyleBackArrowOverlay {
     private HapticListener hapticListener;
     private boolean hapticsEnabledForGesture;
 
-    MiuiStyleBackArrowOverlay(Context context, String resourcePackage, Logger logger) {
+    public MiuiStyleBackArrowOverlay(Context context, String resourcePackage, Logger logger) {
         this.context = context;
         this.resourcePackage = resourcePackage;
         this.logger = logger;
     }
 
-    void setHapticListener(HapticListener listener) {
+    public void setHapticListener(HapticListener listener) {
         hapticListener = listener;
     }
 
     /**
      * Decided per gesture at ACTION_DOWN; off keeps this overlay fully silent.
      */
-    void setHapticsForGesture(boolean enabled) {
+    public void setHapticsForGesture(boolean enabled) {
         hapticsEnabledForGesture = enabled;
     }
 
     /**
      * Whether the ready-back haptic already played for the current arrow show.
      */
-    boolean isArrowFeedbackDone() {
+    public boolean isArrowFeedbackDone() {
         ArrowView current = view;
         return current == null || current.arrowFeedbackDone;
     }
@@ -120,7 +120,7 @@ final class MiuiStyleBackArrowOverlay {
     /**
      * Blocks a late fade-in completion from vibrating after the gesture ended.
      */
-    void markArrowFeedbackDone() {
+    public void markArrowFeedbackDone() {
         ArrowView current = view;
         if (current != null) {
             current.arrowFeedbackDone = true;
@@ -139,7 +139,7 @@ final class MiuiStyleBackArrowOverlay {
      * Returns false when the HyperOS skin cannot be shown; callers must then leave the
      * native AOSP panel visible.
      */
-    boolean prepare(int edge, boolean blurEnabled) {
+    public boolean prepare(int edge, boolean blurEnabled) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             return false;
         }
@@ -157,7 +157,7 @@ final class MiuiStyleBackArrowOverlay {
         }
     }
 
-    void onGestureStart(float rawY, int edge) {
+    public void onGestureStart(float rawY, int edge) {
         ArrowView current = view;
         if (current == null) {
             return;
@@ -172,7 +172,7 @@ final class MiuiStyleBackArrowOverlay {
                 ? ArrowView.POSITION_LEFT : ArrowView.POSITION_RIGHT);
     }
 
-    void onGestureProgress(float offsetPx, boolean arrowLit) {
+    public void onGestureProgress(float offsetPx, boolean arrowLit) {
         ArrowView current = view;
         if (current != null) {
             current.onSwipeProgress(offsetPx, arrowLit);
@@ -182,7 +182,7 @@ final class MiuiStyleBackArrowOverlay {
     /**
      * Pass a negative offset to retract from the last drawn scale (cancellation).
      */
-    void onGestureEnd(float offsetPx) {
+    public void onGestureEnd(float offsetPx) {
         ArrowView current = view;
         if (current != null) {
             current.onSwipeStop(offsetPx);
@@ -192,7 +192,7 @@ final class MiuiStyleBackArrowOverlay {
     /**
      * Safe from any thread; used by driver detach and hot reload teardown.
      */
-    void detach() {
+    public void detach() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             mainHandler.post(this::detach);
             return;

@@ -1,4 +1,4 @@
-package dev.codex.miuibackgesturehook.hooks.systemui;
+package dev.codex.miuibackgesturehook.hooks.systemui.indicator;
 
 import org.junit.Test;
 

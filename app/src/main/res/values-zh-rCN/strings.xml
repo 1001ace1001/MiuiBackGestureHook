@@ -1,4 +1,9 @@
 <resources>
+    <string name="side_gesture_group_title">侧边手势</string>
+    <string name="gesture_handle_group_title">底部手势提示线</string>
+    <string name="status_bar_group_title">状态栏</string>
+    <string name="restore_status_bar_follow_title">恢复状态栏跟随（试验性）</string>
+    <string name="restore_status_bar_follow_summary">恢复被移除的状态栏跟随行为</string>
     <string name="predictive_back_title">返回手势管理</string>
     <string name="predictive_back_apps_title">选择应用</string>
     <string name="predictive_back_apps_entry_title">应用列表</string>

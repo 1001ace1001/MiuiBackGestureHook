@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from safe_lsposed_native_deploy import CommandResult, Deployer
+from safe_lsposed_native_deploy import CommandResult, Deployer, LogSnapshot, parse_args
 
 
 class RecordingDeployer(Deployer):
@@ -37,6 +37,29 @@ class PackageInstallationTest(unittest.TestCase):
                         index = command.index("--enable-rollback")
                         self.assertEqual(command[index + 1], "2")
                     self.assertEqual(command[-1], str(apk))
+
+
+class HotReloadTest(unittest.TestCase):
+    @patch("safe_lsposed_native_deploy.time.sleep")
+    def test_strict_install_rejects_deferred_reload_without_reinstalling(self, sleep):
+        deployer = RecordingDeployer()
+        deployer.get_systemui_pid = lambda: 42
+        deployer.read_lsposed_log_delta = lambda _: "Deferred hot reload until recents bar cleanup completes"
+        with self.assertRaisesRegex(RuntimeError, "No fresh SystemUI API-102"):
+            deployer.wait_api102_hot_reload(42, LogSnapshot())
+        self.assertEqual(deployer.commands, [])
+
+    def test_completed_reload_never_needs_another_install(self):
+        deployer = RecordingDeployer()
+        deployer.get_systemui_pid = lambda: 42
+        deployer.read_lsposed_log_delta = lambda _: "Hot reloaded, build=test, process=com.android.systemui"
+        self.assertIn("Hot reloaded", deployer.wait_api102_hot_reload(42, LogSnapshot()))
+        self.assertEqual(deployer.commands, [])
+
+    def test_strict_deploy_flag_is_explicit(self):
+        args = parse_args(["--serial", "test", "--no-hot-reload-retry"])
+        self.assertTrue(args.no_hot_reload_retry)
+        self.assertFalse(parse_args(["--serial", "test"]).no_hot_reload_retry)
 
 
 class StatusDeployer(RecordingDeployer):

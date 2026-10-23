@@ -1,4 +1,4 @@
-package dev.codex.miuibackgesturehook.hooks.systemui;
+package dev.codex.miuibackgesturehook.hooks.systemui.platform;
 
 import android.animation.Animator;
 import android.annotation.SuppressLint;
@@ -8,58 +8,58 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 @SuppressLint("PrivateApi")
-abstract class SystemUiPlatformImpl {
-    abstract String name();
+public abstract class SystemUiPlatformImpl {
+    public abstract String name();
 
-    abstract Class<?> backAnimationParameterClass(ClassLoader classLoader) throws Exception;
+    public abstract Class<?> backAnimationParameterClass(ClassLoader classLoader) throws Exception;
 
-    abstract boolean isNavigationOverlayExcluded(Object edgeBackGestureHandler,
+    public abstract boolean isNavigationOverlayExcluded(Object edgeBackGestureHandler,
                                                  int x, int y) throws Exception;
 
-    abstract Object findNativeEdgeBackPlugin(Object edgeBackGestureHandler) throws Exception;
+    public abstract Object findNativeEdgeBackPlugin(Object edgeBackGestureHandler) throws Exception;
 
-    abstract Object ensureNativeEdgeBackPlugin(Object edgeBackGestureHandler,
+    public abstract Object ensureNativeEdgeBackPlugin(Object edgeBackGestureHandler,
                                                Context context) throws Exception;
 
-    abstract void prepareNativeBackPanel(Object edgeBackGestureHandler,
+    public abstract void prepareNativeBackPanel(Object edgeBackGestureHandler,
                                          Object plugin) throws Exception;
 
-    abstract void updateDisplaySize(Object edgeBackGestureHandler,
+    public abstract void updateDisplaySize(Object edgeBackGestureHandler,
                                     Object plugin) throws Exception;
 
-    abstract boolean canCreateNavBarOrTaskBar(Object controller, int displayId)
+    public abstract boolean canCreateNavBarOrTaskBar(Object controller, int displayId)
             throws Exception;
 
-    boolean requiresStableGestureInsetsOverrideTypes() {
+    public boolean requiresStableGestureInsetsOverrideTypes() {
         return false;
     }
 
-    int backAnimationBackgroundEnsureParameterCount() {
+    public int backAnimationBackgroundEnsureParameterCount() {
         return 6;
     }
 
-    String defaultTransitionAnimatorsFieldName() {
+    public String defaultTransitionAnimatorsFieldName() {
         return "mAnimations";
     }
 
-    String defaultTransitionOpenCaptureHookId() {
+    public String defaultTransitionOpenCaptureHookId() {
         return "systemui_default_transition_start";
     }
 
-    boolean captureOpenFromTransitionsOwner() {
+    public boolean captureOpenFromTransitionsOwner() {
         return false;
     }
 
-    Animator unwrapDefaultTransitionAnimator(Object entry) throws Exception {
+    public Animator unwrapDefaultTransitionAnimator(Object entry) throws Exception {
         return entry instanceof Animator ? (Animator) entry : null;
     }
 
-    Method brokenBackAnimationStatusBarResetMethod(ClassLoader classLoader)
+    public Method brokenBackAnimationStatusBarResetMethod(ClassLoader classLoader)
             throws Exception {
         return null;
     }
 
-    Method backEventGuardMethod(ClassLoader classLoader) throws Exception {
+    public Method backEventGuardMethod(ClassLoader classLoader) throws Exception {
         Class<?> controllerClass = Class.forName(
                 "com.android.wm.shell.back.BackAnimationController",
                 false, classLoader);
@@ -69,20 +69,20 @@ abstract class SystemUiPlatformImpl {
         return method;
     }
 
-    void injectLegacyBackKey(Object controller, int displayId) throws Exception {
+    public void injectLegacyBackKey(Object controller, int displayId) throws Exception {
         invokeCompatible(controller, "sendBackEvent", Integer.valueOf(0));
         invokeCompatible(controller, "sendBackEvent", Integer.valueOf(1));
     }
 
-    String systemUiInputArbiterStateAction(String defaultAction) {
+    public String systemUiInputArbiterStateAction(String defaultAction) {
         return defaultAction;
     }
 
-    boolean nativeLauncherOwnsContextualSearchLongPress() {
+    public boolean nativeLauncherOwnsContextualSearchLongPress() {
         return false;
     }
 
-    void destroy() {
+    public void destroy() {
     }
 
     static Object readField(Object target, String name) throws Exception {

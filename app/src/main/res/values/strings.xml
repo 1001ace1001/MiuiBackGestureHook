@@ -1,4 +1,9 @@
 <resources>
+    <string name="side_gesture_group_title">Side gestures</string>
+    <string name="gesture_handle_group_title">Bottom gesture handle</string>
+    <string name="status_bar_group_title">Status bar</string>
+    <string name="restore_status_bar_follow_title">Restore status bar following (experimental)</string>
+    <string name="restore_status_bar_follow_summary">Restore the removed status bar following behavior</string>
     <string name="app_name" translatable="false">Miui Back Gesture Hook</string>
     <string name="module_description" translatable="false">Hooks Xiaomi back gesture behavior with LSPosed API 102.</string>
     <string name="predictive_back_title">Back gesture management</string>

@@ -1,0 +1,100 @@
+package dev.codex.miuibackgesturehook.hooks.systemui.barfollow
+
+import kotlin.test.Test
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class RecentsBarReuseSessionTest {
+    @Test fun retainedCallbackAcknowledgesANewControllerOnlyAtStart() {
+        val callback = Any()
+        val original = Any()
+        val endpoint = Any()
+        repeat(3) {
+            val s = RecentsBarReuseSession(Any(), Any(), Any(), Any(), null, null, null, Any(), 42)
+            assertFalse(s.adopt(s.owner, callback, original, endpoint, true, 1))
+            assertFalse(s.adopt(s.owner, callback, original, endpoint, false, 12))
+            assertFalse(s.adopt(Any(), callback, original, endpoint, true, 12))
+            assertTrue(s.adopt(s.owner, callback, original, endpoint, true, 12))
+            s.delivered(callback, true, 1)
+            assertTrue(consume(s))
+            assertFalse(s.adopt(s.owner, Any(), original, endpoint, true, 12))
+            s.close()
+            assertFalse(s.adopt(s.owner, callback, original, endpoint, true, 12))
+        }
+    }
+    private fun session() = RecentsBarReuseSession(Any(), Any(), Any(), Any(), Any(), Any(), Any(), Any(), 42)
+    private fun consume(s: RecentsBarReuseSession, live: Boolean = true, toHome: Boolean = false) =
+        s.consume(s.controller, s.transition, s.info, s.callback, s.task, toHome, live)
+
+    @Test fun repeatedReuseDoesNotWaitForTransitionEnd() {
+        val s = session()
+        repeat(3) {
+            s.delivered(s.callback, true, 1)
+            s.delivered(s.callback, true, 6)
+            assertTrue(consume(s))
+            assertFalse(consume(s))
+        }
+    }
+
+    @Test fun normalOpenAndExistingAppShowNeverGetAnotherHandoff() {
+        for (state in listOf(0, 2, 5, 7, 9, 10, 12)) {
+            val s = session()
+            assertFalse(consume(s))
+            s.delivered(s.callback, true, 1)
+            s.delivered(s.callback, true, state)
+            assertFalse(consume(s))
+        }
+    }
+
+    @Test fun lateGestureBookkeepingDoesNotEraseHomeAlphaTarget() {
+        val s = session()
+        s.delivered(s.callback, true, 3)
+        assertFalse(consume(s))
+        s.delivered(s.callback, true, 1)
+        s.delivered(s.callback, true, 3)
+        assertTrue(consume(s))
+        s.delivered(s.callback, true, 3)
+        assertFalse(consume(s))
+    }
+
+    @Test fun foreignCallbacksCannotArmOrDisarmCurrentHomeTarget() {
+        val s = session()
+        s.delivered(Any(), true, 1)
+        s.delivered(s.callback, false, 1)
+        assertFalse(consume(s))
+        s.delivered(s.callback, true, 1)
+        s.delivered(Any(), true, 7)
+        s.delivered(s.callback, false, 9)
+        s.delivered(s.callback, true, 14)
+        assertTrue(consume(s))
+    }
+
+    @Test fun replacementAndRetirementRejectQueuedDirection() {
+        val s = session()
+        s.delivered(s.callback, true, 1)
+        val identities = arrayOf(s.controller, s.transition, s.info, s.callback, s.task)
+        for (index in identities.indices) {
+            val changed = identities.copyOf().also { it[index] = Any() }
+            assertFalse(s.consume(changed[0], changed[1], changed[2], changed[3], changed[4], false, true))
+        }
+        assertFalse(consume(s, live = false))
+        assertFalse(consume(s, toHome = true))
+        s.close()
+        s.delivered(s.callback, true, 1)
+        assertFalse(consume(s))
+    }
+
+    @Test fun anotherPublishedCallbackCannotReplaceTheDeliveredSession() {
+        val s = session()
+        val next = session()
+        next.delivered(next.callback, true, 12)
+        s.delivered(s.callback, true, 12)
+        s.delivered(s.callback, true, 1)
+        s.delivered(next.callback, true, 9)
+        assertTrue(consume(s))
+        assertFalse(consume(next))
+        s.close()
+        s.delivered(s.callback, true, 1)
+        assertFalse(consume(s))
+    }
+}

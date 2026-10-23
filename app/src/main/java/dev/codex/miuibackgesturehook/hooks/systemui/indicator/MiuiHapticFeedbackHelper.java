@@ -1,4 +1,4 @@
-package dev.codex.miuibackgesturehook.hooks.systemui;
+package dev.codex.miuibackgesturehook.hooks.systemui.indicator;
 
 import android.content.Context;
 import android.os.SystemProperties;
@@ -26,7 +26,7 @@ import java.util.concurrent.ExecutorService;
  * exactly like Xiaomi's {@code isSupportEffectGestureBackLinear()}; the single AOSP
  * replacement checks only its actual default effect (162 or V2 effect 0).
  */
-final class MiuiHapticFeedbackHelper {
+public final class MiuiHapticFeedbackHelper {
 
     private static final int EFFECT_GESTURE_READY_BACK_LINEAR = 162;
     private static final int EFFECT_GESTURE_BACK_HAND_UP_LINEAR = 163;
@@ -35,7 +35,7 @@ final class MiuiHapticFeedbackHelper {
     private static final int EFFECT_GESTURE_BACK_HAND_UP_V2_ENHANCED = 1;
     private static final long LINEAR_HAND_UP_BLOCK_MS = 140L;
 
-    interface Logger {
+    public interface Logger {
         void log(int priority, String message, Throwable throwable);
     }
 
@@ -49,7 +49,7 @@ final class MiuiHapticFeedbackHelper {
     private volatile boolean enhancedMode;
     private volatile long lastReadyBackUptime;
 
-    MiuiHapticFeedbackHelper(Context context, Logger logger) {
+    public MiuiHapticFeedbackHelper(Context context, Logger logger) {
         this.logger = logger;
         Object util = null;
         Method perform = null;
@@ -102,15 +102,15 @@ final class MiuiHapticFeedbackHelper {
         }
     }
 
-    boolean isSupported() {
+    public boolean isSupported() {
         return supported;
     }
 
-    boolean isDefaultBackSupported() {
+    public boolean isDefaultBackSupported() {
         return defaultBackSupported;
     }
 
-    boolean isHapticV2() {
+    public boolean isHapticV2() {
         return hapticV2;
     }
 
@@ -119,16 +119,16 @@ final class MiuiHapticFeedbackHelper {
      * effect 1 instead of 0, and the 140ms blocker also applies to V2. Disabled keeps
      * the stock behavior.
      */
-    void setEnhancedMode(boolean enabled) {
+    public void setEnhancedMode(boolean enabled) {
         enhancedMode = enabled;
     }
 
-    boolean isEnhancedMode() {
+    public boolean isEnhancedMode() {
         return enhancedMode;
     }
 
     /** Plays only HyperOS's default back effect, without its second hand-up stage. */
-    boolean performDefaultBack() {
+    public boolean performDefaultBack() {
         if (!defaultBackSupported) {
             return false;
         }
@@ -148,14 +148,14 @@ final class MiuiHapticFeedbackHelper {
         }
     }
 
-    void close() {
+    public void close() {
         if (executor instanceof ExecutorService) {
             ((ExecutorService) executor).shutdownNow();
         }
     }
 
     /** Arrow fade-in completed; mirrors performGestureReadyBack(). */
-    void performReadyBack() {
+    public void performReadyBack() {
         if (!supported) {
             return;
         }
@@ -166,7 +166,7 @@ final class MiuiHapticFeedbackHelper {
     }
 
     /** Committed release; mirrors performGestureBackHandUp() with the 140ms blocker. */
-    void performHandUp() {
+    public void performHandUp() {
         if (!supported) {
             return;
         }

@@ -55,6 +55,10 @@ object PredictiveBackPreferences {
     const val KEY_FULLSCREEN_DIRECT_BACK = "fullscreen_direct_back"
     const val DEFAULT_FULLSCREEN_DIRECT_BACK = false
 
+    /** Restore the native App/Home status-bar following pipeline on Android 17. */
+    const val KEY_RESTORE_STATUS_BAR_FOLLOW = "restore_status_bar_follow"
+    const val DEFAULT_RESTORE_STATUS_BAR_FOLLOW = true
+
     /** The vertical size of both Xiaomi side trigger areas, expressed as a percentage. */
     const val KEY_GESTURE_TRIGGER_HEIGHT_PERCENT = "gesture_trigger_height_percent"
     const val DEFAULT_GESTURE_TRIGGER_HEIGHT_PERCENT = 100

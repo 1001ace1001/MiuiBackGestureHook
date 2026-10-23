@@ -54,6 +54,9 @@ import java.util.concurrent.atomic.AtomicReference;
 import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
 import dev.codex.miuibackgesturehook.hooks.core.HookRuntimeCore;
 
+import dev.codex.miuibackgesturehook.hooks.systemui.indicator.MiuiHapticFeedbackHelper;
+import dev.codex.miuibackgesturehook.hooks.systemui.indicator.MiuiStyleBackArrowOverlay;
+
 
 @SuppressLint({"PrivateApi", "DiscouragedApi"})
 public abstract class SystemUiInputRuntime extends HookRuntimeCore {

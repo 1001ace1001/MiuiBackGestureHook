@@ -1,4 +1,4 @@
-package dev.codex.miuibackgesturehook.hooks.systemui;
+package dev.codex.miuibackgesturehook.hooks.systemui.platform;
 
 import android.animation.Animator;
 import android.annotation.SuppressLint;
@@ -22,13 +22,13 @@ import java.util.Map;
 import java.util.WeakHashMap;
 
 @SuppressLint({"PrivateApi", "DiscouragedPrivateApi", "DiscouragedApi"})
-final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
+public final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     private final Map<Object, Object> modulePlugins =
             Collections.synchronizedMap(new WeakHashMap<>());
     private final Map<Object, Object> moduleBackCallbacks =
             Collections.synchronizedMap(new WeakHashMap<>());
 
-    static boolean matches(Class<?> edgeBackGestureHandlerClass, ClassLoader classLoader) {
+    public static boolean matches(Class<?> edgeBackGestureHandlerClass, ClassLoader classLoader) {
         try {
             findField(edgeBackGestureHandlerClass, "mDisplayBackGestureHandlerFactory");
             findField(edgeBackGestureHandlerClass, "mDisplayBackGestureHandlers");
@@ -46,22 +46,22 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    String name() {
+    public String name() {
         return "android17";
     }
 
     @Override
-    boolean nativeLauncherOwnsContextualSearchLongPress() {
+    public boolean nativeLauncherOwnsContextualSearchLongPress() {
         return true;
     }
 
     @Override
-    Class<?> backAnimationParameterClass(ClassLoader classLoader) throws Exception {
+    public Class<?> backAnimationParameterClass(ClassLoader classLoader) throws Exception {
         return Class.forName("com.android.wm.shell.back.BackAnimation", false, classLoader);
     }
 
     @Override
-    Method brokenBackAnimationStatusBarResetMethod(ClassLoader classLoader)
+    public Method brokenBackAnimationStatusBarResetMethod(ClassLoader classLoader)
             throws Exception {
         // HyperOS Android 17 keeps the AOSP CrossActivityBackAnimation callsites but
         // strips status-bar customization from BackAnimationBackground. In exact 4371
@@ -89,7 +89,7 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    Method backEventGuardMethod(ClassLoader classLoader) throws Exception {
+    public Method backEventGuardMethod(ClassLoader classLoader) throws Exception {
         // Android 17 adds the target display to the private stock key-event helper.
         Class<?> controllerClass = Class.forName(
                 "com.android.wm.shell.back.BackAnimationController",
@@ -101,14 +101,14 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    void injectLegacyBackKey(Object controller, int displayId) throws Exception {
+    public void injectLegacyBackKey(Object controller, int displayId) throws Exception {
         // Keep the complete DOWN/UP pair inside Shell. Exact Android 17 injectBackKey(int)
         // forwards displayId to sendBackEvent(action, displayId) for both events.
         invokeCompatible(controller, "injectBackKey", Integer.valueOf(displayId));
     }
 
     @Override
-    boolean isNavigationOverlayExcluded(Object edgeBackGestureHandler,
+    public boolean isNavigationOverlayExcluded(Object edgeBackGestureHandler,
                                         int x, int y) throws Exception {
         // Android 17 removed mNavBarOverlayExcludedBounds. The parent handler's application,
         // desktop and PiP exclusions remain authoritative for the main display; the new
@@ -119,12 +119,12 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    Object findNativeEdgeBackPlugin(Object edgeBackGestureHandler) {
+    public Object findNativeEdgeBackPlugin(Object edgeBackGestureHandler) {
         return modulePlugins.get(edgeBackGestureHandler);
     }
 
     @Override
-    Object ensureNativeEdgeBackPlugin(Object edgeBackGestureHandler,
+    public Object ensureNativeEdgeBackPlugin(Object edgeBackGestureHandler,
                                       Context context) throws Exception {
         Object existing = modulePlugins.get(edgeBackGestureHandler);
         if (existing != null) {
@@ -168,7 +168,7 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    void prepareNativeBackPanel(Object edgeBackGestureHandler,
+    public void prepareNativeBackPanel(Object edgeBackGestureHandler,
                                 Object plugin) throws Exception {
         // Xiaomi's Android 17 constructor leaves mBackCallback null because the real
         // callback is normally wired while creating each DisplayBackGestureHandlerImpl.
@@ -254,7 +254,7 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    void updateDisplaySize(Object edgeBackGestureHandler,
+    public void updateDisplaySize(Object edgeBackGestureHandler,
                            Object plugin) throws Exception {
         Context context = (Context) readField(edgeBackGestureHandler, "mContext");
         WindowManager windowManager = context.getSystemService(WindowManager.class);
@@ -267,14 +267,14 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    boolean canCreateNavBarOrTaskBar(Object controller, int displayId) throws Exception {
+    public boolean canCreateNavBarOrTaskBar(Object controller, int displayId) throws Exception {
         Object result = invokeCompatible(controller,
                 "canCreateNavBarOrTaskBar", Integer.valueOf(displayId));
         return Boolean.TRUE.equals(result);
     }
 
     @Override
-    boolean requiresStableGestureInsetsOverrideTypes() {
+    public boolean requiresStableGestureInsetsOverrideTypes() {
         // Android 17 rejects a relayout that introduces a new override type after
         // the NavigationBar window has already been added.  Declare the IME type
         // on the very first LayoutParams even while gesture eligibility is false.
@@ -282,13 +282,13 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    int backAnimationBackgroundEnsureParameterCount() {
+    public int backAnimationBackgroundEnsureParameterCount() {
         // Exact HyperOS 4371: ensureBackground(Rect, int, Transaction, int, int).
         return 5;
     }
 
     @Override
-    String defaultTransitionAnimatorsFieldName() {
+    public String defaultTransitionAnimatorsFieldName() {
         // Android 17 renamed DefaultTransitionHandler's token-to-animator-list map.
         // Keep the versioned name here so Android 16 retains mAnimations and an
         // unknown platform shape continues to fail closed.
@@ -296,19 +296,19 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    String defaultTransitionOpenCaptureHookId() {
+    public String defaultTransitionOpenCaptureHookId() {
         return "systemui_a17_transition_player_ready_open_capture";
     }
 
     @Override
-    boolean captureOpenFromTransitionsOwner() {
+    public boolean captureOpenFromTransitionsOwner() {
         // Hook the Binder-facing player boundary, then enqueue capture behind its own
         // ready task on the same Shell executor. This avoids every inlined inner call.
         return true;
     }
 
     @Override
-    Animator unwrapDefaultTransitionAnimator(Object entry) throws Exception {
+    public Animator unwrapDefaultTransitionAnimator(Object entry) throws Exception {
         if (entry instanceof Animator) {
             return (Animator) entry;
         }
@@ -323,7 +323,7 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    String systemUiInputArbiterStateAction(String defaultAction) {
+    public String systemUiInputArbiterStateAction(String defaultAction) {
         // The native Android 17 launcher already owns this protected dynamic
         // receiver.  Carry the module extras through that existing filter so
         // the native bridge never mutates or duplicates MiuiHome's filter.
@@ -333,7 +333,7 @@ final class SystemUiAndroid17Impl extends SystemUiPlatformImpl {
     }
 
     @Override
-    void destroy() {
+    public void destroy() {
         List<Object> plugins;
         synchronized (modulePlugins) {
             plugins = new ArrayList<>(modulePlugins.values());
