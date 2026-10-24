@@ -1,7 +1,5 @@
 package dev.codex.miuibackgesturehook.hooks.systemui;
 
-import dev.codex.miuibackgesturehook.hooks.core.MiuiHomePackages;
-
 import android.animation.Animator;
 import android.animation.AnimatorListenerAdapter;
 import android.animation.ValueAnimator;
@@ -63,23 +61,25 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import dev.codex.miuibackgesturehook.PredictiveBackPreferences;
-import io.github.libxposed.api.XposedInterface;
-
+import dev.codex.miuibackgesturehook.hooks.core.MiuiHomePackages;
 import dev.codex.miuibackgesturehook.hooks.systemui.barfollow.StatusBarAppearanceInputs;
 import dev.codex.miuibackgesturehook.hooks.systemui.barfollow.SystemUiBarFollowRuntime;
+import dev.codex.miuibackgesturehook.hooks.systemui.platform.LauncherConnectionObserver;
 import dev.codex.miuibackgesturehook.hooks.systemui.platform.SystemUiAndroid16Impl;
 import dev.codex.miuibackgesturehook.hooks.systemui.platform.SystemUiAndroid17Impl;
 import dev.codex.miuibackgesturehook.hooks.systemui.platform.SystemUiPlatformImpl;
+import io.github.libxposed.api.XposedInterface;
 
 @SuppressLint({"PrivateApi", "DiscouragedPrivateApi"})
 public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
     protected static final String STATUS_BAR_TRANSIENT_ARRAY = "systemui_status_bar_transient_appearance_array";
 
     private volatile SystemUiPlatformImpl systemUiPlatformImpl;
+    private volatile LauncherConnectionObserver launcherConnection;
+    private final Handler launcherConnectionHandler = new Handler(Looper.getMainLooper());
     private volatile SharedPreferences contextualSearchStatePreferences;
     private volatile Context contextualSearchStateContext;
     private final SharedPreferences.OnSharedPreferenceChangeListener
@@ -1511,7 +1511,8 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
             try {
                 Class<?> appearanceClass = Class.forName(STATUS_BAR_APPEARANCE_LAMBDA, false, classLoader);
                 method = findAnyMethod(appearanceClass, "invoke", 6);
-                if (method == null) throw new NoSuchMethodException(STATUS_BAR_APPEARANCE_LAMBDA + ".invoke/6");
+                if (method == null)
+                    throw new NoSuchMethodException(STATUS_BAR_APPEARANCE_LAMBDA + ".invoke/6");
                 id = "systemui_status_bar_transient_appearance";
                 callback = this::preserveTransientBarAppearance;
             } catch (ClassNotFoundException absent) {
@@ -1544,7 +1545,8 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                     boolean writesMode = false;
                     for (org.luckypray.dexkit.result.UsingFieldData field : candidate.getUsingFields())
                         if (field.getUsingType() == org.luckypray.dexkit.result.FieldUsingType.Write
-                                && field.getField().getFieldInstance(loader).equals(mode)) writesMode = true;
+                                && field.getField().getFieldInstance(loader).equals(mode))
+                            writesMode = true;
                     if (!writesMode) continue;
                     Class<?> reducer = candidate.getMethodInstance(loader).getDeclaringClass();
                     if (!reducer.getName().startsWith(repository + "$")
@@ -1553,18 +1555,22 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                             || reducer.getDeclaredField("label").getType() != int.class) continue;
                     Method invoke = reducer.getDeclaredMethod("invoke", Object.class, Object.class, Object.class);
                     if (invoke.getReturnType() != Object.class) continue;
-                    if (result != null) throw new NoSuchMethodException("Ambiguous native status appearance reducer");
+                    if (result != null)
+                        throw new NoSuchMethodException("Ambiguous native status appearance reducer");
                     result = invoke;
                 }
             }
-        } finally { systemUiDexResolutionInFlight.decrementAndGet(); }
-        if (result == null) throw new NoSuchMethodException("Native status appearance array reducer");
+        } finally {
+            systemUiDexResolutionInFlight.decrementAndGet();
+        }
+        if (result == null)
+            throw new NoSuchMethodException("Native status appearance array reducer");
         return result;
     }
 
     protected Object preserveTransientStatusBarAppearanceArray(XposedInterface.Chain chain) throws Throwable {
         Class<?> attributes = Class.forName("com.android.systemui.statusbar.data.repository."
-                + "StatusBarModePerDisplayRepositoryImpl$ModifiedStatusBarAttributes", false,
+                        + "StatusBarModePerDisplayRepositoryImpl$ModifiedStatusBarAttributes", false,
                 chain.getExecutable().getDeclaringClass().getClassLoader());
         Object original = chain.getArg(1);
         Object corrected = StatusBarAppearanceInputs.withoutTransient(original, attributes);
@@ -7170,6 +7176,10 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
     }
 
     protected synchronized void unregisterMiuiOverviewStateReceiver() {
+        LauncherConnectionObserver connection = launcherConnection;
+        launcherConnection = null;
+        launcherConnectionHandler.removeCallbacksAndMessages(null);
+        if (connection != null) connection.close();
         releaseContextualSearchStatePreferenceListener();
         BroadcastReceiver receiver = miuiOverviewReceiver;
         Context receiverContext = miuiOverviewReceiverContext;
@@ -7261,10 +7271,49 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                 + ", restoredOverviewVisible=true");
     }
 
+    private void ensureLauncherConnection(Object edgeHandler) {
+        if (Build.VERSION.SDK_INT != Build.VERSION_CODES.CINNAMON_BUN || edgeHandler == null)
+            return;
+        launcherConnectionHandler.post(() -> {
+            if (!acceptingBackInputInstalls) return;
+            try {
+                Object service = readField(edgeHandler, "mLauncherProxyService");
+                if (launcherConnection != null && launcherConnection.ownsService(service)) return;
+                Context context = ((Context) readField(edgeHandler, "mContext")).getApplicationContext();
+                if (launcherConnection != null) launcherConnection.close();
+                launcherConnection = new LauncherConnectionObserver(service,
+                        () -> systemUiInputArbiterGeneration, (source, receipt) -> {
+                    // Native onServiceConnected must finish before notifying its newly
+                    // initialized Launcher. A retained monitor does not reattach when
+                    // only Launcher restarts, so its normal advertisement never reruns.
+                    launcherConnectionHandler.post(() -> {
+                        if (!acceptingBackInputInstalls || launcherConnection != source
+                                || !source.isCurrent(receipt, systemUiInputArbiterGeneration))
+                            return;
+                        publishSystemUiInputArbiterState(context,
+                                systemUiInputArbiterMonitorCount.get() > 0, "launcherConnected");
+                    });
+                }, (message, failure) -> {
+                    if (failure == null) moduleLog(Log.WARN, TAG, message);
+                    else moduleLog(Log.WARN, TAG, message, failure);
+                });
+                // The platform immediately publishes an already-connected baseline.
+                // Assign first so both cold installation and API-102 backfill can use it.
+                launcherConnection.start();
+                moduleLog(Log.INFO, TAG, "Observing native Launcher connection for input-arbiter advertisement");
+            } catch (Throwable failure) {
+                if (launcherConnection != null) launcherConnection.close();
+                launcherConnection = null;
+                moduleLog(Log.WARN, TAG, "Launcher connection observation unavailable", failure);
+            }
+        });
+    }
+
     protected void installBackInputDriver(Object edgeBackGestureHandler, Object backAnimationImpl) {
         if (!acceptingBackInputInstalls) {
             return;
         }
+        ensureLauncherConnection(edgeBackGestureHandler);
         try {
             if (edgeBackGestureHandler == null || backAnimationImpl == null) {
                 return;
@@ -7322,6 +7371,7 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
         if (!acceptingBackInputInstalls || edgeBackGestureHandler == null) {
             return;
         }
+        ensureLauncherConnection(edgeBackGestureHandler);
         try {
             if (nativeInputMonitors.containsKey(edgeBackGestureHandler)) {
                 return;
