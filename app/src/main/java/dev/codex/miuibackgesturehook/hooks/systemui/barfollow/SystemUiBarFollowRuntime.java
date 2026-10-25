@@ -31,6 +31,7 @@ public abstract class SystemUiBarFollowRuntime extends SystemUiInputRuntime {
     protected static final String BAR_START = "systemui_recents_bar_follow_start";
     protected static final String BAR_REUSE_BIND = "systemui_recents_bar_reuse_bind";
     protected static final String BAR_REUSE_DIRECTION = "systemui_recents_bar_reuse_direction";
+    protected static final String BAR_REUSE_TARGETS = "systemui_recents_bar_reuse_appeared_targets";
     protected static final String BAR_FOLME_UPDATE = "systemui_bar_folme_update";
     protected static final String BAR_FOLME_COMPLETE = "systemui_bar_folme_complete";
     protected static final String BAR_FOLME_CANCEL = "systemui_bar_folme_cancel";
@@ -196,6 +197,63 @@ public abstract class SystemUiBarFollowRuntime extends SystemUiInputRuntime {
         direction.setAccessible(true);
         if (!present.contains(BAR_REUSE_DIRECTION)) recordHookHandle(hook(direction).setId(BAR_REUSE_DIRECTION)
                 .intercept(this::handoffRecentsBarReuse));
+        try { hookRecentsBarTargets(loader, controller, present); }
+        catch (Throwable failure) {
+            moduleLog(Log.WARN, TAG, "Recents accepted-target observation unavailable; preserving original task path", failure);
+        }
+    }
+
+    private void hookRecentsBarTargets(ClassLoader loader, Class<?> controller, Set<String> present)
+            throws Throwable {
+        systemUiDexResolutionInFlight.incrementAndGet();
+        try (DexKitBridge dex = DexKitBridge.create(resolveBarFollowDexContainer(controller))) {
+            Class<?> runner = Class.forName("com.android.wm.shell.recents.IRecentsAnimationRunner", false, loader);
+            Class<?> targetArray = java.lang.reflect.Array.newInstance(Class.forName(
+                    "android.view.RemoteAnimationTarget", false, loader), 0).getClass();
+            Method nativeAppeared = runner.getDeclaredMethod("onTasksAppeared",
+                    targetArray, TransitionInfo.class);
+            MethodData selected = null;
+            for (MethodData candidate : dex.findMethod(FindMethod.create().matcher(
+                    MethodMatcher.create().declaredClass(controller.getName()).paramCount(2)))) {
+                if (!candidate.isMethod()) continue;
+                Method method = candidate.getMethodInstance(loader);
+                if (method.getReturnType() != void.class || java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                        || !java.util.Arrays.equals(method.getParameterTypes(),
+                        new Class<?>[]{java.util.ArrayList.class, TransitionInfo.class})) continue;
+                boolean invokesNative = false;
+                for (MethodData invoked : candidate.getInvokes())
+                    if (invoked.getDeclaredClassName().equals(runner.getName())
+                            && invoked.getMethodInstance(loader).equals(nativeAppeared)) invokesNative = true;
+                if (!invokesNative) continue;
+                if (selected != null) throw new NoSuchMethodException("Ambiguous native appeared-target dispatch");
+                selected = candidate;
+            }
+            if (selected == null) throw new NoSuchMethodException("Native appeared-target dispatch");
+            java.util.List<MethodData> bridges = selected.getCallers();
+            if (bridges.size() != 1) throw new NoSuchMethodException("Ambiguous appeared-target bridge");
+            Method bridge = bridges.get(0).getMethodInstance(loader);
+            if (bridge.getDeclaringClass() != controller || bridge.getReturnType() != void.class
+                    || !java.lang.reflect.Modifier.isStatic(bridge.getModifiers())
+                    || !java.util.Arrays.equals(bridge.getParameterTypes(),
+                    new Class<?>[]{controller, java.util.ArrayList.class, TransitionInfo.class}))
+                throw new NoSuchMethodException("Native appeared-target bridge contract");
+            java.util.List<MethodData> dispatchers = bridges.get(0).getCallers();
+            if (dispatchers.size() != 1) throw new NoSuchMethodException("Ambiguous appeared-target Runnable");
+            Method run = dispatchers.get(0).getMethodInstance(loader);
+            Class<?> runnable = run.getDeclaringClass();
+            if (!Runnable.class.isAssignableFrom(runnable) || !run.getName().equals("run")
+                    || run.getReturnType() != void.class || run.getParameterCount() != 0
+                    || runnable.getDeclaredField("f$0").getType() != controller
+                    || runnable.getDeclaredField("f$1").getType() != Object.class
+                    || runnable.getDeclaredField("f$2").getType() != Object.class
+                    || runnable.getDeclaredField("$r8$classId").getType() != int.class
+                    || !deoptimize(bridge) || !deoptimize(run))
+                throw new IllegalStateException("Native appeared-target caller could not be fenced");
+            Method method = selected.getMethodInstance(loader);
+            method.setAccessible(true);
+            if (!present.contains(BAR_REUSE_TARGETS)) recordHookHandle(hook(method).setId(BAR_REUSE_TARGETS)
+                    .intercept(this::observeRecentsBarTargets));
+        } finally { systemUiDexResolutionInFlight.decrementAndGet(); }
     }
 
     protected abstract String resolveBarFollowDexContainer(Class<?> target) throws Throwable;
@@ -277,6 +335,12 @@ public abstract class SystemUiBarFollowRuntime extends SystemUiInputRuntime {
     }
 
     private boolean liveBarReuseController(Object owner, Object controller, Object token) throws Throwable {
+        if (!liveBarReuseOwner(owner, controller, token)) return false;
+        Object tasks = readField(controller, "mClosingTasks");
+        return tasks instanceof java.util.List && ((java.util.List<?>) tasks).isEmpty();
+    }
+
+    private boolean liveBarReuseOwner(Object owner, Object controller, Object token) throws Throwable {
         if (!nativeBarWindowActive || token == null
                 || invokeAnyMethod(owner, "findController", new Object[]{token}) != controller
                 || !Integer.valueOf(0).equals(readField(controller, "mDisplayId"))
@@ -285,11 +349,72 @@ public abstract class SystemUiBarFollowRuntime extends SystemUiInputRuntime {
                 || !Boolean.FALSE.equals(readField(controller, "mKeyguardLocked"))
                 || readField(controller, "mTakeoverHandler") != null
                 || readField(controller, "mPendingFinishTransition") != null) return false;
-        for (String name : new String[]{"mClosingTasks"}) {
-            Object tasks = readField(controller, name);
-            if (tasks != null && (!(tasks instanceof java.util.List) || !((java.util.List<?>) tasks).isEmpty()))
-                return false;
+        return true;
+    }
+
+    protected Object observeRecentsBarTargets(XposedInterface.Chain chain) throws Throwable {
+        Object controller = chain.getThisObject();
+        RecentsBarReuseSession session;
+        Object update = null;
+        RecentsBarNativeTarget captured = null;
+        synchronized (barReuseLock) {
+            session = barReuseSession;
+            if (session != null && session.controller == controller && barFeatureState.enabled()) {
+                update = session.beginTargetUpdate();
+                try {
+                    invokeAnyMethod(readField(session.owner, "mExecutor"), "assertCurrentThread", new Object[0]);
+                    if (liveBarReuseOwner(session.owner, controller, readField(controller, "mTransition")))
+                        captured = RecentsBarNativeTarget.capture(session, controller,
+                                (java.util.List<?>) chain.getArg(0), (TransitionInfo) chain.getArg(1));
+                } catch (Throwable failure) {
+                    moduleLog(Log.WARN, TAG, "RecentsBarTarget: native target capture unavailable", failure);
+                }
+            }
         }
+        Object result;
+        try { result = chain.proceed(); } // Always preserve native target delivery.
+        catch (Throwable failure) {
+            synchronized (barReuseLock) { if (session != null && update != null) session.acceptTarget(update, null); }
+            throw failure;
+        }
+        synchronized (barReuseLock) {
+            if (session == null || session != barReuseSession || update == null) return result;
+            try {
+                if (captured != null && !captured.matchesCurrent(controller, (TransitionInfo) session.info)) captured = null;
+                RecentsBarReuseSession.Target target = captured == null ? null
+                        : new RecentsBarReuseSession.Target(captured.task, captured.taskId, captured);
+                boolean accepted = session.acceptTarget(update, target);
+                moduleLog(Log.INFO, TAG, "RecentsBarTarget: accepted=" + accepted
+                        + " task=" + (captured == null ? -1 : captured.taskId)
+                        + " merge=" + ((TransitionInfo) chain.getArg(1)).getDebugId()
+                        + (accepted ? "" : " " + describeBarReuseTasks(controller)));
+                // The direction-to-app callback can precede onTasksAppeared.
+                // Complete that same native decision after its target is known.
+                if (accepted && session.awaitingAppShow()) deliverAcceptedAppBar(session, "targets");
+            } catch (Throwable failure) {
+                session.acceptTarget(update, null);
+                moduleLog(Log.WARN, TAG, "RecentsBarTarget: native target publication unavailable", failure);
+            }
+        }
+        return result;
+    }
+
+    private boolean deliverAcceptedAppBar(RecentsBarReuseSession session, String source) throws Throwable {
+        RecentsBarReuseSession.Target target = session.currentTarget();
+        if (target == null || !(target.proof instanceof RecentsBarNativeTarget) || session.callback == null) return false;
+        Object controller = session.controller;
+        Object token = readField(controller, "mTransition");
+        RecentsBarNativeTarget proof = (RecentsBarNativeTarget) target.proof;
+        boolean live = barFeatureState.enabled() && liveBarReuseOwner(session.owner, controller, token)
+                && readField(controller, "mInfo") == session.info
+                && proof.matchesCurrent(controller, (TransitionInfo) session.info)
+                && barCallbackBinder(readField(session.callback, "val$original")) == session.endpoint
+                && ((IBinder) session.endpoint).isBinderAlive();
+        if (!session.consumeTarget(controller, token, readField(controller, "mInfo"), session.callback,
+                target, proof.task, !Boolean.FALSE.equals(readField(controller, "mWillFinishToHome")), live)) return false;
+        invokeAnyMethod(session.original, "onGestureStateUpdated", new Object[]{7});
+        moduleLog(Log.INFO, TAG, "RecentsBarTarget: App show task=" + target.taskId
+                + " merge=" + proof.mergeId + " source=" + source);
         return true;
     }
 
@@ -355,29 +480,32 @@ public abstract class SystemUiBarFollowRuntime extends SystemUiInputRuntime {
                 boolean delivered = false;
                 if (session != null && session.controller == controller && session.callback != null) {
                     invokeAnyMethod(readField(session.owner, "mExecutor"), "assertCurrentThread", new Object[0]);
-                    Object token = readField(controller, "mTransition");
-                    boolean live = liveBarReuseController(session.owner, controller, token)
-                            && ((android.app.ActivityManager.RunningTaskInfo) readField(session.task, "mTaskInfo")).taskId == session.taskId
-                            // WMS allocates a callback per ready transition; Shell's
-                            // latest publication does not retire the delivered one.
-                            // Use exactly the endpoint that carried this Home target.
-                            && barCallbackBinder(readField(session.callback, "val$original")) == session.endpoint
-                            && ((IBinder) session.endpoint).isBinderAlive()
-                            && Boolean.valueOf(toHome).equals(readField(controller, "mWillFinishToHome"));
-                    Object currentTask = singleBarReuseTask(controller);
-                    if (session.consume(controller, token, readField(controller, "mInfo"), session.callback,
-                            currentTask, toHome, live)) {
-                        // A16 animToFullScreen -> noStartActivityAppOpen (7). Preserve
-                        // WMS's existing Folme velocity, task parenting and cleanup.
-                        invokeAnyMethod(session.original, "onGestureStateUpdated", new Object[]{7});
-                        delivered = true;
-                    } else if (!toHome) {
-                        moduleLog(Log.INFO, TAG, "RecentsBarReuse: rejected live=" + live
-                                + " taskPresent=" + (currentTask != null)
-                                + " sameTask=" + (currentTask == session.task)
-                                + " sameTransition=" + (token == session.transition)
-                                + " sameInfo=" + (readField(controller, "mInfo") == session.info)
-                                + ((!live || currentTask != session.task) ? " " + describeBarReuseTasks(controller) : ""));
+                    if (!toHome && session.awaitingAppShow()) delivered = deliverAcceptedAppBar(session, "direction");
+                    if (session.currentTarget() == null) {
+                        Object token = readField(controller, "mTransition");
+                        boolean live = liveBarReuseController(session.owner, controller, token)
+                                && ((android.app.ActivityManager.RunningTaskInfo) readField(session.task, "mTaskInfo")).taskId == session.taskId
+                                // WMS allocates a callback per ready transition; Shell's
+                                // latest publication does not retire the delivered one.
+                                // Use exactly the endpoint that carried this Home target.
+                                && barCallbackBinder(readField(session.callback, "val$original")) == session.endpoint
+                                && ((IBinder) session.endpoint).isBinderAlive()
+                                && Boolean.valueOf(toHome).equals(readField(controller, "mWillFinishToHome"));
+                        Object currentTask = singleBarReuseTask(controller);
+                        if (!delivered && session.consume(controller, token, readField(controller, "mInfo"), session.callback,
+                                currentTask, toHome, live)) {
+                            // A16 animToFullScreen -> noStartActivityAppOpen (7). Preserve
+                            // WMS's existing Folme velocity, task parenting and cleanup.
+                            invokeAnyMethod(session.original, "onGestureStateUpdated", new Object[]{7});
+                            delivered = true;
+                        } else if (!delivered && !toHome) {
+                            moduleLog(Log.INFO, TAG, "RecentsBarReuse: rejected live=" + live
+                                    + " taskPresent=" + (currentTask != null)
+                                    + " sameTask=" + (currentTask == session.task)
+                                    + " sameTransition=" + (token == session.transition)
+                                    + " sameInfo=" + (readField(controller, "mInfo") == session.info)
+                                    + ((!live || currentTask != session.task) ? " " + describeBarReuseTasks(controller) : ""));
+                        }
                     }
                 }
                 moduleLog(Log.INFO, TAG, "RecentsBarReuse: direction toHome=" + toHome

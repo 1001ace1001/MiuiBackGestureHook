@@ -97,4 +97,117 @@ class RecentsBarReuseSessionTest {
         s.delivered(s.callback, true, 1)
         assertFalse(consume(s))
     }
+
+    private fun target(task: Any = Any(), id: Int = 84) = RecentsBarReuseSession.Target(task, id, Any())
+    private fun publish(s: RecentsBarReuseSession, next: RecentsBarReuseSession.Target): Any {
+        val update = s.beginTargetUpdate()
+        assertTrue(s.acceptTarget(update, next))
+        return update
+    }
+    private fun show(s: RecentsBarReuseSession, next: RecentsBarReuseSession.Target,
+        task: Any = next.task, live: Boolean = true, toHome: Boolean = false) =
+        s.consumeTarget(s.controller, s.transition, s.info, s.callback, next, task, toHome, live)
+
+    @Test fun nativeAppearedTargetReplacesTheOriginalAppWithoutReplacingTheController() {
+        val s = session()
+        val b = target()
+        s.delivered(s.callback, true, 1)
+        publish(s, b)
+        assertFalse(consume(s))
+        assertTrue(show(s, b))
+        assertFalse(show(s, b))
+    }
+
+    @Test fun acceptedTargetsAdvanceEvenAfterTheFirstApplicationLeavesTheNativeLists() {
+        val s = session()
+        for (next in listOf(target(), target(id = 90), target(s.task, s.taskId))) {
+            publish(s, next)
+            s.delivered(s.callback, true, 1)
+            assertTrue(show(s, next))
+            assertFalse(show(s, next))
+        }
+    }
+
+    @Test fun homeStateArrivingDuringNativeTargetDeliveryIsRetained() {
+        val s = session()
+        val b = target()
+        val update = s.beginTargetUpdate()
+        s.delivered(s.callback, true, 1)
+        assertFalse(show(s, b))
+        assertFalse(consume(s))
+        assertTrue(s.acceptTarget(update, b))
+        assertTrue(show(s, b))
+    }
+
+    @Test fun anABARetargetCannotAcceptAnOldDeliveryOrOldProof() {
+        val s = session()
+        val a = target(s.task, s.taskId)
+        val b = target()
+        val old = s.beginTargetUpdate()
+        publish(s, b)
+        publish(s, a)
+        assertFalse(s.acceptTarget(old, b))
+        s.delivered(s.callback, true, 1)
+        assertFalse(show(s, b))
+        assertTrue(show(s, a))
+    }
+
+    @Test fun replacedNativeTaskOrUncertainOwnerCannotConsumeTheHomeTarget() {
+        val s = session()
+        val b = target()
+        publish(s, b)
+        s.delivered(s.callback, true, 1)
+        assertFalse(show(s, b, task = Any()))
+        assertFalse(show(s, b, live = false))
+        assertFalse(show(s, b, toHome = true))
+        assertTrue(show(s, b))
+    }
+
+    @Test fun nativeTargetDoesNotRelaxTheOriginalControllerTransitionOrCallback() {
+        val s = session()
+        val b = target()
+        publish(s, b)
+        s.delivered(s.callback, true, 1)
+        val identities = arrayOf(s.controller, s.transition, s.info, s.callback)
+        for (index in identities.indices) {
+            val changed = identities.copyOf().also { it[index] = Any() }
+            assertFalse(s.consumeTarget(changed[0], changed[1], changed[2], changed[3], b, b.task, false, true))
+        }
+        assertTrue(show(s, b))
+    }
+
+    @Test fun lateTargetDeliveryCannotReviveHotReloadOrCleanup() {
+        val s = session()
+        val b = target()
+        val update = s.beginTargetUpdate()
+        s.delivered(s.callback, true, 1)
+        s.close()
+        assertFalse(s.acceptTarget(update, b))
+        assertFalse(show(s, b))
+        assertFalse(consume(s))
+        assertTrue(s.beginTargetUpdate() == null)
+    }
+
+    @Test fun malformedTargetCannotEnableAnUnrelatedApp() {
+        val s = session()
+        val b = target(id = -1)
+        s.delivered(s.callback, true, 1)
+        assertFalse(s.acceptTarget(s.beginTargetUpdate(), b))
+        assertFalse(show(s, b))
+        assertTrue(consume(s))
+    }
+
+    @Test fun aRepeatedTargetDeliveryDoesNotRearmAnAlreadyConsumedHomeState() {
+        val s = session()
+        val b = target()
+        publish(s, b)
+        s.delivered(s.callback, true, 1)
+        assertTrue(show(s, b))
+        val nextReceipt = target(b.task, b.taskId)
+        publish(s, nextReceipt)
+        assertFalse(show(s, nextReceipt))
+        s.delivered(s.callback, true, 1)
+        s.delivered(s.callback, true, 7)
+        assertFalse(show(s, nextReceipt))
+    }
 }

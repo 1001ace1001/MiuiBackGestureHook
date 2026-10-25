@@ -23,6 +23,8 @@ out/
 
 # Local-only Xiaomi/vendor references and reverse-engineering outputs.
 # Keep these files on the workstation; never publish proprietary binaries or decompilation.
+/refs/android16/hyperos_apps/
+/refs/android17/hyperos_apps/
 /refs/android17/hyperos-framework/
 /refs/android17/miui-home-*/
 /refs/android17/miui-wmshell/

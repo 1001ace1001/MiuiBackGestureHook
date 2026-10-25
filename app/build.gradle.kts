@@ -69,7 +69,7 @@ android {
         minSdk = 36
         targetSdk = 37
         versionCode = gitVersionCode.get()
-        versionName = "0.12.0"
+        versionName = "0.12.1"
 
         ndk {
             abiFilters += "arm64-v8a"

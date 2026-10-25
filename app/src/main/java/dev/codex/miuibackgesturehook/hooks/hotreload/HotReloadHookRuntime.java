@@ -888,6 +888,8 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                 return XposedInterface.Chain::proceed;
             case BAR_REUSE_DIRECTION:
                 return this::handoffRecentsBarReuse;
+            case BAR_REUSE_TARGETS:
+                return this::observeRecentsBarTargets;
             case BAR_PREPARE:
                 return this::prepareRecentsBarFollow;
             case BAR_START:

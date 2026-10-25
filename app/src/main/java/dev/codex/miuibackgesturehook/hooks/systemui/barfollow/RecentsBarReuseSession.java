@@ -2,11 +2,22 @@ package dev.codex.miuibackgesturehook.hooks.systemui.barfollow;
 
 /** Caller serializes callback delivery and Shell handoff; identities are never time based. */
 final class RecentsBarReuseSession {
+    static final class Target {
+        final Object task, proof;
+        final int taskId;
+
+        Target(Object task, int taskId, Object proof) {
+            this.task = task; this.taskId = taskId; this.proof = proof;
+        }
+    }
+
     final Object owner, controller, transition, info, task;
     Object callback, original, endpoint;
     final int taskId;
     private boolean homeTarget;
     private boolean closed;
+    private Object targetUpdate;
+    private Target target;
 
     RecentsBarReuseSession(Object owner, Object controller, Object transition, Object info,
             Object callback, Object original, Object endpoint, Object task, int taskId) {
@@ -39,13 +50,45 @@ final class RecentsBarReuseSession {
 
     boolean consume(Object currentController, Object currentTransition, Object currentInfo,
             Object currentCallback, Object currentTask, boolean finishToHome, boolean live) {
+        // Once native delivery selected B, the original A is no longer a
+        // fallback merely because its task remains on the controller.
+        if (targetUpdate != null || target != null) return false;
+        return consumeOwner(currentController, currentTransition, currentInfo, currentCallback,
+                currentTask == task, finishToHome, live);
+    }
+
+    Object beginTargetUpdate() {
+        if (closed) return null;
+        return targetUpdate = new Object();
+    }
+
+    boolean acceptTarget(Object update, Target next) {
+        if (closed || update == null || targetUpdate != update) return false;
+        targetUpdate = null;
+        target = next != null && next.task != null && next.taskId >= 0 && next.proof != null ? next : null;
+        return target != null;
+    }
+
+    Target currentTarget() { return closed || targetUpdate != null ? null : target; }
+    Target previousTarget() { return closed ? null : target; }
+    boolean awaitingAppShow() { return !closed && homeTarget; }
+
+    boolean consumeTarget(Object currentController, Object currentTransition, Object currentInfo,
+            Object currentCallback, Target receipt, Object currentTask, boolean finishToHome, boolean live) {
+        return consumeOwner(currentController, currentTransition, currentInfo, currentCallback,
+                targetUpdate == null && receipt != null && target == receipt && currentTask == receipt.task,
+                finishToHome, live);
+    }
+
+    private boolean consumeOwner(Object currentController, Object currentTransition, Object currentInfo,
+            Object currentCallback, boolean matchesTask, boolean finishToHome, boolean live) {
         if (closed || !homeTarget || !live || finishToHome
                 || currentController != controller || currentTransition != transition
-                || currentInfo != info || currentCallback != callback || currentTask != task) return false;
+                || currentInfo != info || currentCallback != callback || !matchesTask) return false;
         homeTarget = false;
         return true;
     }
 
-    void close() { closed = true; homeTarget = false; }
+    void close() { closed = true; homeTarget = false; targetUpdate = null; target = null; }
 
 }
