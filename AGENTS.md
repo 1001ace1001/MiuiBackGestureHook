@@ -1,952 +1,127 @@
 # AGENTS.md
 
-## Project Context
-
-This repository is an LSPosed module for researching Xiaomi/MIUI back gesture behavior.
-
-## Device Mutation Constraint
-
-- Never write Android system properties during development or recovery. Do not
-  execute `setprop`, and do not invoke any helper command whose implementation
-  writes a property, even when it would write the value already present.
-- Do not rely on a native child process reading `/data/adb/modules`: the
-  `hyos_spawner`/MiuiHome SELinux domains cannot use module-local marker files
-  as in-process gates. LSPosed's module enabled/scope state and framework-owned
-  HYOS injection are the sole runtime control;
-  validated 4371 business/bridge hooks are compile-time parts of the APK's
-  native entry. The rejected native-receiver experiment stays compile-time
-  disabled. This branch has no standalone native-module package or controller;
-  never install a controller under `/system/bin`.
-- Never overwrite or truncate the active native module file while any process
-  maps it. The native entry is delivered only as part of a complete APK through
-  PackageManager and LSPosed; never extract, push, overwrite, or activate its
-  `.so` separately. Replace the exact owning spawner through the approved
-  no-property workflow so the new APK inode becomes active.
-- Every iterative LSPosed native APK update must use
-  `python miui-home-hyos-native/safe_lsposed_native_deploy.py`. It must install the whole
-  APK through PackageManager, prove the SystemUI API-102 hot reload without a
-  SystemUI restart, and replace only the exact root `hyos_spawner` through the
-  no-property workflow. It must verify the new Launcher parent, current APK
-  mapping/inode, native readiness, and no new tombstone. Never use this script
-  while a retired standalone owner remains mapped.
-- A formal native handoff test is one activation followed by exactly one fresh
-  side gesture and one evidence capture. If a build cannot obtain arbiter
-  readiness until MiuiHome first reaches its processor, label one separate
-  gesture as a readiness warmup, capture it independently, and only then
-  perform exactly one formal gesture. Never count the warmup as handoff
-  evidence. Count the formal gesture as successful only when the same
-  captured session proves native accepted-DOWN publication, SystemUI's exact
-  matching acceptance and pilfer, and Shell navigation start. Gesture visuals,
-  query/reply success, or a native hook counter alone are not takeover proof.
-
-Current workspace:
-
-```text
-repository root (use the current working directory)
-```
-
-For iterative on-device tests, build and install `:app:assembleDebug`; use a release build only
-for a final delivery candidate. Preserve the API-102 hot-reload verification after installation.
-
-Previous jadx workspace:
-
-```text
-use the currently configured jadx MCP workspace; do not assume an absolute path
-```
-
-## Current Goal
-
-The abandoned MiuiHome experiment is specifically the old GestureStub/
-`BackAnimationAdapter` injection path. Standard launcher callback/runner registration
-through Shell remains in scope for `TYPE_RETURN_TO_HOME`.
-
-The current direction is SystemUI-first: keep gesture ownership and progress in SystemUI,
-then restore the AOSP SystemUI/WM Shell back gesture pipeline.
-
-Preserve the working `TYPE_CALLBACK`, `TYPE_CROSS_ACTIVITY`, `TYPE_CROSS_TASK`, and
-`TYPE_RETURN_TO_HOME` paths. `TYPE_RETURN_TO_HOME` uses the standard Shell-to-launcher
-callback/runner. MiuiHome binds its closing target to one native
-`WindowElement`/`RectFSpringAnim` that owns both predictive preview and Xiaomi's
-post-commit CLOSE animation.
-
-Preserve the Xiaomi-native in-app Activity OPEN interruption path alongside the AOSP
-predictive-back path.
-
-- Check for a reversible running Xiaomi OPEN transition before calling
-  `BackAnimationController.onGestureStarted(...)`.
-- Do not pause or manually animate the running OPEN animators; let Xiaomi finish or reverse
-  them through its native OPEN/CLOSE merge path.
-- If the exact active OPEN snapshot normally loses reversibility while its accepted gesture
-  remains down, leave the native interruption path and start standard Shell navigation with
-  the accumulated coordinates. Seed the tracker on `mShellExecutor` before its runner can
-  start; cancellation, reverse-end, replacement, or stale input/owner identity must not hand off.
-- Commit interruption gestures with a normal BACK. If OPEN has ended or Xiaomi rejects the
-  merge, ordinary CLOSE fallback is expected.
-- When no reversible OPEN exists, preserve the existing AOSP predictive-back path.
-- Capture the transition/animator set on
-  `DefaultTransitionHandler.startAnimation(...)`'s owner thread, verify animator state on
-  `mAnimExecutor`, and publish a module-owned snapshot with immutable transition/animator
-  identity and atomic lifecycle state. Do not read Shell's map or animator state from the
-  input Looper.
-- Tie duplicate BACK suppression to the current interruption attempt, controller, and
-  `TransitionInfo`. It may consume at most one adjacent DOWN/UP pair after a successful
-  merge; never use a process-wide time window.
-
-Launcher-to-app OPEN animations are owned by MiuiHome's remote-animation path and do not
-reach SystemUI `DefaultTransitionHandler.startAnimation(...)`. Preserve Xiaomi's native
-launcher interruption path.
-
-- Mirror `BackGestureBreakController`/`StateManager` native availability to SystemUI. Query
-  it on the next main-Looper turn after the StateManager start callback, guarded by the
-  animation identity and generation; the synchronous callback state is premature.
-- Keep gesture input, the native `BackPanelController` indicator, and pilfering in SystemUI.
-- Snapshot the active MiuiHome generation on `ACTION_DOWN`. Accept a commit command only if
-  it still matches the active generation.
-- Use explicit identity-sharing broadcasts in both directions. Validate the shared caller
-  package and verify that the sending UID owns it.
-- At commit, recheck native availability before `breakOpenAnim()`. An accepted command must
-  not also send BACK. A missing receiver or explicit rejection gets exactly one ordinary
-  BACK fallback; cancellation sends no command.
-- When a reusable `CLOSE_TO_HOME` animation is retargeted in place to `OPEN_FROM_HOME`,
-  adopt that running animation under a fresh generation only after verifying the native
-  reused-close/open state. Preserve command-time validation and normal end cleanup.
-- Preserve a PermissionController merge only under the exact current immutable launcher-OPEN
-  snapshot. The normal sequence is main OPEN `N`, Permission ActivityRecord OPEN `N+1`, then
-  its matching CLOSE `N+2`; when WM collapses the permission OPEN, accept only the isolated
-  Permission CLOSE `N+1` with no container or parent.
-- If Xiaomi handler 0 accepts a Permission OPEN while its launcher-OPEN snapshot is being
-  published, synchronously re-read the current snapshot once after the native handler returns.
-  Do not add a delayed retry or broadly reroute handler-99 transitions.
-
-Primary target process:
-
-```text
-com.android.systemui
-```
-
-Current static scope:
-
-```text
-com.android.systemui
-com.miui.home
-com.mi.android.globallauncher
-com.google.android.googlequicksearchbox
-system
-```
-
-On Android 16, POCO Launcher (`com.mi.android.globallauncher`) may reuse the MiuiHome
-Java hooks while retaining the runtime `com.miui.home.*` class namespace. Bind launcher
-classification, explicit broadcast targets, sender-package/UID checks and indicator resources
-to one selected launcher package per process generation. Never trust both senders interchangeably.
-Keep Android 16 contextual-search platform calls authenticated as SystemUI. Android 17 and newer
-must also reject every POCO-process Java hook during cold load and hot reload; the existing native
-entry remains exclusive to `com.miui.home` and does not provide POCO support on those releases.
-
-Android 17 launcher safety rule:
-
-- Keep `com.miui.home` in the static LSPosed scope: Android 16 uses its launcher Java hooks,
-  and Android 17 and newer require it for LSPosed's HYOS-spawner native-entry loading.
-  On Android 17 and newer, register no MiuiHome-process Java LSPosed hooks.
-  Cold package loading and hot-reload backfill must
-  both fail closed; hot reload from an older build must unhook every old MiuiHome handle instead
-  of replacing it. Android 17 launcher-side research belongs to the APK's
-  LSPosed native entry loaded through the framework's HYOS-spawner support.
-- Keep Circle to Search bottom-long-press ownership in MiuiHome's native
-  `LongPressDetector`/`LongPressManager`. Do not add a global MotionEvent hook, synthetic input,
-  or a second bottom-gesture recognizer. Override a successful false result only for the exact
-  `android.software.contextualsearch` and
-  `com.google.android.feature.CONTEXTUAL_SEARCH` PackageManager queries. On China builds whose
-  terminal Flutter route rejects the absent `NavLongPress` setting, an exact static profile or
-  the bounded runtime resolver may replace only the normal native `Fn` terminal callback after
-  the Xiaomi detector commits: preserve its captured completion marker and call Xiaomi's existing
-  `circle_to_search_helper::invoke(1)`. Do not hook the consuming `FnOnce` shim, copy a GPL
-  implementation, or issue a hand-written voice-interaction Binder transaction. Every profile,
-  callback, helper, or closure-layout mismatch preserves the original callback. Runtime resolution
-  must independently prove one PackageManager-backed support function, its one direct Xiaomi
-  invoke caller, and one normal `Fn` carrying the exact completion release-store shape; ambiguity
-  leaves all contextual-search offsets empty without rejecting the base dynamic side profile.
-- For Home's existing Dart long-press route, the resolved per-invocation action may be
-  overridden only for the exact `NavLongPress` source after native Home gesture admission,
-  while the authenticated Circle to Search preference is enabled. Preserve the original
-  action lookup/await and use Xiaomi's existing CTS branch; never write the user's saved
-  gesture setting or replace its recognizer. Uniquely prove the caller, lookup/await,
-  CTS constant comparison and CTS callee, deriving frame and pool locations from that graph.
-  Preserve live registers and NZCV, make no Dart/C++ calls from the assembly observer, and
-  retain owner-epoch, retirement and remap guards. Disabled preferences, ambiguous graphs
-  and source/layout mismatches preserve the original action.
-- Mirror the Circle to Search preference on the existing explicit SystemUI-to-MiuiHome arbiter
-  broadcast. Store it only after the shared caller package and sending UID pass the existing
-  authentication and the generation is current. Missing, malformed, stale, or unauthenticated
-  state fails closed. Android 17 SystemUI must not attach the Android 16 gesture-handle input
-  receiver while native MiuiHome owns this gesture.
-- Authenticate the platform contextual-search start call against the platform owner. Android 17
-  accepts it only when the Binder calling UID owns exactly `com.miui.home`; Android 16 continues
-  to accept only `com.android.systemui`. Keep the Google provider callback under its separate
-  exact Google-package authentication and never broaden either boundary to arbitrary system UIDs.
-- After the Android 17 LSPosed native entry has loaded, Circle to Search preference changes must apply
-  without restarting the phone. Listen through API-102 remote preferences in SystemUI and
-  republish the current authenticated arbiter generation; the already-installed native terminal
-  hook reads the new state on the next long press and Xiaomi's helper rechecks the exact feature
-  query. Unregister the listener during hot reload and never rebuild or replace the native
-  long-press owner.
-
-Keep scope minimal. Do not add other target applications or further `system_server` cleanup or
-compatibility hooks unless new SystemUI/server evidence requires them.
-
-Google App optional-feature rules:
-
-- `com.google.android.googlequicksearchbox` is scoped only for the optional Android 16
-  Circle to Search Live Translate action and the optional Lensient contextual searchbox.
-  Both preferences default off. When a feature is off, every hook belonging to that
-  feature must preserve the original result; Live Translate additionally preserves the original
-  result whenever Circle to Search is off.
-- Resolve the Google action bean from the stable action id and then require the exact Android 16
-  constructor and boolean-gate shapes. Ambiguous, missing, or unreadable matches fail closed.
-- Override only the exact Live Translate system-feature query and the final View/Compose
-  visibility gates. Never forge a MediaProjection token, bypass screen-capture consent, or
-  replace the Google-owned click/translation flow.
-- Treat the Google hook IDs as hot-reload lifecycle keys. Replace existing handles before
-  backfilling missing gates, and defer reload while the dex resolver owns an active bridge.
-- For the Lensient contextual searchbox, require the unique one-argument boolean screen-thumbnail
-  retention method carrying the exact `vidcip` marker. Ambiguous, missing, or unreadable matches
-  preserve the original behavior. Override only its successful false result.
-  Resolve the Ask Screen eligibility and native hint model through DexKit semantic markers,
-  field ownership and call relationships shared with that thumbnail owner. Do not depend on a
-  Google version number, obfuscated member name, constructor parameter count or argument index.
-  A successful false eligibility result may be enabled only when Google's original entrypoint
-  check identifies OMNI and the feature preferences are enabled; let Google's model and hint
-  callback select its own text. Preserve other entrypoints and the native screenshot, context,
-  upload and submission flows. Never globally enable Labs or change Phenotype records,
-  forge a thumbnail, spoof Build identity, bypass consent, or manufacture a capture/token path.
-  Keep Live Translate and Ask Screen in independent components owned by a Google lifecycle
-  coordinator, outside the SystemServer/MiuiHome runtime inheritance chain. Retired diagnostic
-  handles must be neutralized during hot reload.
-
-Predictive opt-in rules:
-
-- The module UI may let the user explicitly select applications for complete predictive-back
-  opt-in. The default selection is empty and configuration failures fail closed. Clearly warn that
-  incompatible single-Activity, WebView, Compose Navigation, or custom-router applications may
-  skip their internal back stack and return directly to Home.
-- Keep selected applications out of the static scope and do not hook their processes. Write the
-  selection through the API-102 Xposed service remote preferences and read it only from the
-  existing `system` scope.
-- Inject only the selected package's current launch `ActivityInfo`: clear its explicit-disable bit
-  and set its explicit-enable bit before the platform opt-in check. Do not modify the shared
-  `ApplicationInfo`. Selection changes apply to newly created Activity instances after the target
-  application is fully restarted.
-- Omit launcher applications whose parsed application-level metadata already opts into predictive
-  back; keep absent, disabled, Activity-only, and mixed declarations visible. Prune stale selections
-  in the UI and independently ignore them in `system_server` so an invisible entry cannot override
-  an Activity-level opt-out. Failure to inspect application metadata in the UI fails open; the
-  corresponding `system_server` failure preserves the platform decision without forcing opt-in.
-
-Hot-reload rules:
-
-- Preserve `autoHotReload=true`. Treat hook IDs as lifecycle keys: whenever a hook is added,
-  renamed, or retired, update its normal installation, old-handle replacement mapping,
-  presence tracking, and missing-hook backfill together. Count an old hook ID as present only
-  after `replaceHook(...)` succeeds; replacement failure must leave it eligible for missing-hook
-  backfill. Track system-server process evidence independently from replacement success.
-- When Xiaomi skips `NavigationBar` creation for FSG with the gesture line hidden, attach
-  `EdgeBackGestureHandler` headlessly through an exact module-owned
-  `NavBarHelper.NavbarTaskbarStateUpdater`. Do not create an invisible navigation-bar window,
-  forge Taskbar initialization, or write lifecycle booleans directly. Reconcile ownership after
-  default-display NavigationBar create/remove and navigation-mode changes; a real NavigationBar
-  or Taskbar owns the native listener lifecycle whenever present.
-- In `onHotReloading(...)`, detach module-owned input monitors and indicator overlay
-  windows, unregister receivers, and invalidate pending snapshots/attempts before saving
-  only the state that is explicitly restored. In `onHotReloaded(...)`, replace or neutralize every old hook and restore state
-  without duplicating monitors, receivers, or callbacks.
-- When restoring MiuiHome from an older non-touchable Stub build, clear the existing
-  `FLAG_NOT_TOUCHABLE` in WMS on each Stub's View owner Looper, request layout and internal
-  insets, then let `BaseRecentsImpl.adaptToTopActivity()` recompute native touchability policy.
-  Invalidate input-arbiter generations across reload; a stale readiness or accepted-input
-  token must never admit a gesture.
-- For `system_server`, do not rely only on `HotReloadedParam.isSystemServer()`. Also treat
-  `processName == "system"` or an existing `server_*` hook as system-server evidence, and
-  recover the real package ClassLoader from an old hook executable or the normal resolver.
-  Keep `system` in the static scope so `onSystemServerStarting(...)` can obtain the real
-  system-server ClassLoader after a cold start.
-- Do not unload, rebuild, or replace the APK native entry during API-102 Java hot reload.
-  Its inline/PLT hooks stay bound to the current spawner generation; a new native payload
-  becomes active only through the framework-owned clean spawner replacement.
-
-Keep MiuiHome `GestureStubView` initialization, native side-window flags,
-`showGestureStub()`/`hideGestureStub()`, touch regions, and DOWN-time
-`RedirectionHelper.requestRedirect(...)` arbitration intact. Do not attach a duplicate
-SystemUI touchable shield. Neutralize `GesturesBackTouchProcessor.onPointerEvent(...)` only
-at its accepted-input boundary so the old GestureStub/`BackAnimationAdapter`, native arrow,
-injection, and direct OPEN-break path cannot race SystemUI. Keep the Xiaomi gesture-line
-progress callback blocked so a gesture claimed by SystemUI remains on the SystemUI/AOSP path.
-
-Same-activity and input rules:
-
-- For `TYPE_CALLBACK`, call
-  `BackNavigationInfo.disableAppProgressGenerationAllowed()` before the original
-  `onBackNavigationInfoReceived(...)` body runs.
-- Keep the module-created SystemUI `InputMonitor` as a spy while MiuiHome's native
-  `GestureStubView` remains the original DOWN target in its physical-pixel width and vertical
-  touch band. MiuiHome must publish an explicit identity-sharing accepted-DOWN token carrying
-  MotionEvent identity, display, edge, and the current SystemUI arbiter generation. SystemUI
-  may start or pilfer only after the token exactly matches its pending spy-channel DOWN.
-- Do not reject a stream merely because its DOWN lies inside a visible IME. A real NavigationBar
-  may publish its left/right edge sensitivity through the standard `systemGestures` providers only
-  with an `InsetsSizeOverride(TYPE_INPUT_METHOD, Insets.NONE)` and a zero cutout-safe minimum.
-  WMS applies that minimum to overridden frames, while `InputMethodService` turns the Insets it
-  receives into an exclusion region; either missing guard would redirect the DOWN before the
-  accepted-DOWN boundary. Keep MiuiHome's `GestureStubView` as the physical edge owner.
-- Use the fixed `8dp` outward threshold together with Xiaomi's non-terminal intent gate
-  (`outward >= abs(vertical) / 2`) to pilfer the accepted MiuiHome stream and start a deferred
-  Shell navigation. A vertical-leading sample remains pending so later horizontal motion can
-  qualify; never terminal-cancel it on direction alone. Retain native `BackPanelController`
-  dispatch and release-time invoke/cancel.
-- By default, apply AOSP's bar-visibility eligibility at `ACTION_DOWN`, before BackPanel,
-  Shell, or pilfering.
-  Snapshot the matching display's existing `SysUiState`: when `SYSUI_STATE_NAV_BAR_HIDDEN` is set
-  and `SYSUI_STATE_ALLOW_GESTURE_IGNORING_BAR_VISIBILITY` (bit 17) is clear, leave the stream
-  unclaimed for native display policy while a real NavigationBar or Taskbar owns transient-bar
-  behavior. When the exact current module-owned headless lease proves that Xiaomi intentionally
-  omitted both owners, accept the first gesture through the normal SystemUI/Shell path instead of
-  waiting for a nonexistent transient NavigationBar. At `ACTION_DOWN`, require a readable matching
-  native `SysUiState`, a ready identity-matching lease, its registered updater, an empty default
-  NavigationBar slot, and an uninitialized Taskbar; lifecycle uncertainty remains fail-closed.
-  Keep transient-yield armed so a real owner that takes over during that stream still cancels the
-  module-started Shell gesture. When bit 17 is set, preserve the native threshold haptic and normal
-  AOSP/Shell arbitration. Do not defer, suppress, or replay BackPanel haptics, and do not infer
-  eligibility from the application, edge, timing, or gesture count.
-- In the default AOSP mode, if native display policy nevertheless shows the navigation bar
-  transiently during an allowed stream, cancel any module-started Shell gesture and do not
-  also commit BACK.
-- In SystemUI, the explicit fullscreen direct-back preference may bypass only the hidden-navigation-bar
-  admission gate and transient-bar yield. Snapshot it at `ACTION_DOWN` only with readable,
-  display-matching native `SysUiState`; missing or malformed preferences preserve AOSP policy.
-  Keep accepted-DOWN authentication, native redirect/exclusion decisions, SystemUI lifecycle,
-  native panel thresholds and ordered Shell commit/cancel unchanged. Preference changes apply
-  to the next physical stream; do not force bar visibility or synthesize an extra BACK.
-- In the existing system-server transient-bars hook, fullscreen direct-back mode must preserve
-  Xiaomi's original `requestTransientBars(null, false)` call instead of supplying a NavigationBar
-  target. Keep that parameter correction exclusive to AOSP mode; missing or malformed preferences
-  preserve the AOSP correction. Do not hide bars after they appear or change other native requests.
-- Restored NavigationBar side-gesture Insets may make that same NavigationBar the native left/right
-  gesture host. In direct-back mode, restore the null target only for its exact non-system-bar
-  request within the same DisplayPolicy left/right callback, bound to the policy, NavigationBar
-  identity and current call thread. Preserve native exclusion checks and callback cleanup; clear
-  the scope in `finally`. Do not apply it to mouse-hover callbacks, top/bottom callbacks, other
-  windows or displays; the native mouse-hover state distinguishes its reused side callback.
-- Preserve the current window-requested status-bar and navigation-bar appearance while those
-  transient bars are shown; do not replace it with SystemUI's forced semi-transparent mode.
-  If preserving that appearance leaves NavigationBar's transition mode unchanged, explicitly
-  re-arm its existing `AutoHideController.touchAutoHide()` path; do not add a module timer or
-  manually hide Insets.
-- Preserve MiuiHome's native redirect decision for disabled, non-touchable, and application
-  exclusion states: a redirected stream never reaches the processor and therefore never emits
-  an accepted token. When SystemUI does not claim a stream, do not synthesize, replay, or
-  transfer it. An accepted stream with no ready SystemUI arbiter fails closed rather than
-  reviving MiuiHome's deprecated gesture processor.
-- Use display width for callback progress. Do not restore the old fixed `220dp` distance.
-- On a Shell path, preserve the active tracker's ordered trigger after `BackPanelController`
-  callbacks; do not override the native commit decision with a fixed pointer-distance threshold.
-  An invalid release caused by cancellation, owner replacement, or MOVE failure may still force
-  the tracker to cancel.
-  On an OPEN-interruption path with no Shell tracker, accept only a proven terminal native-panel
-  commit after release; missing or unknown panel state fails closed.
-- Do not intercept `setTriggerBack(false)` or recompute a cancelled release from pointer distance.
-
-Recents ownership rules:
-
-- Mirror Xiaomi voice-assistant visibility from the exact native
-  `type_from`/`isEnter` Bundle call graph. Resolve that call site dynamically
-  from the mapped launcher's ELF imports and instruction/data relationships;
-  never add a launcher-version offset or fixed XiaoAi profile. Missing or
-  ambiguous resolution disables only this optional state bridge. Publish the
-  observed state through the existing authenticated, generation-bound
-  MiuiHome-to-SystemUI channel. While XiaoAi overlays launcher Home, probe
-  Shell once on `ACTION_DOWN`, accept only `TYPE_CALLBACK`, and otherwise
-  leave the stream unpilfered. Do not hook the voice-assistant process, invoke
-  its private APIs, or synthesize BACK.
-- Track the launcher's existing overview state and task-launch exit signals in SystemUI.
-- Mirror state through the explicit SystemUI-targeted identity-sharing broadcast. Validate
-  that the sending UID owns `com.miui.home` and the shared caller package is exactly
-  `com.miui.home`; do not trust the unprotected native fullscreen-state broadcast.
-- Start Shell once on `ACTION_DOWN` and accept only `TYPE_CALLBACK`.
-- For null or stale non-callback targets, clean Shell navigation, keep the native panel
-  visual only, and leave the input stream unpilfered.
-- Do not add focus polling, retries, delayed commits, synthetic input, launcher binder BACK
-  transactions, or direct `RecentsContainer.onBackPressed()` calls.
-- Mirror MiuiHome `LauncherState.ALL_APPS` through the same explicit identity-sharing
-  broadcast. When the drawer is visible, probe Shell once on `ACTION_DOWN`, accept only its
-  standard `TYPE_CALLBACK`, and otherwise leave launcher Home ignored and unpilfered.
-- When NotificationShade or Control Center overlays launcher Home on the default display,
-  snapshot Xiaomi's notification/QS `SysUiState` expansion flags on `ACTION_DOWN` and give
-  that overlay precedence over launcher Overview, drawer, editing, and OPEN interruption.
-  Probe Shell once and accept only `TYPE_CALLBACK`; unreadable, keyguard, bouncer, or
-  screen-pinning state and null/non-callback targets fail closed and remain unpilfered. Do not
-  invoke launcher-local back or shade-collapse APIs directly.
-- Classify launcher Home by the exact top component resolved from MiuiHome's `HOME` or
-  `SECONDARY_HOME` entry, not by package name alone. MiuiHome-owned settings and other sibling
-  Activities use the ordinary SystemUI/Shell back path. On resolution failure, fall back to the
-  previous package-level Home classification; only existing authenticated Overview, drawer, or
-  launcher-OPEN state may still claim that stream.
-- Mirror `BaseLauncher.isInEditing()` from MiuiHome's native back-status refresh through the same
-  authenticated state channel. Publish only from the exact active Launcher instance; a callback
-  posted by an old or destroyed Launcher must not overwrite its replacement. While the real
-  Launcher is editing, including its launcher-settings bottom sheet, probe Shell once on
-  `ACTION_DOWN`, accept only `TYPE_CALLBACK`, and otherwise leave the stream unpilfered. A new
-  SystemUI arbiter generation must force MiuiHome to republish the current editing state; idle Home
-  remains ignored.
-
-- On Android 17, mirror the complete `LauncherOverlayStateManager.notifyBackGestureStatus()`
-  decision for Home children, including caller-generated false, source adjustment and early
-  ineligibility. A true child state requires the final native `interactable=true` and exact
-  `typefrom_home_sub`; all other completed results clear it. Preserve native state/input policy
-  and use the existing authenticated, arbiter-generation and Dart-owner-bound channel.
-  Resolve the notifier's frame, complete forwarding call and String layout from the same mapped
-  AOT image before reading its live frame; never call Dart or C++ from the assembly observer.
-  Replace the partial editing-query observation, retire/repair both notifier exits together,
-  and invalidate owner state across remaps. Android 17 must ignore legacy `launcher_editing`
-  broadcasts and restored editing booleans. Do not infer completion from a timeout or clear
-  state merely because one BACK finished; native menus may still have another level to close.
-- Serialize native Dart-state broadcasts through their existing publisher. Cache the exact
-  snapshot successfully sent, including its owner and arbiter generation, even when live
-  state changed during the send. Compare that receipt with current state before draining;
-  an `A -> B -> A` change must not suppress the corrective A after B was delivered.
-- A completed native `interactable=false / typefrom_home` publication also clears the
-  same Dart owner's Overview observation, including when a task-card launch skips its
-  scene-animation exit signal. Publish that exit even if the Home-child value was already
-  false. Unreadable frames, early ineligibility, and other sources must not imply an Overview exit.
-
-Remote-animation rules:
-
-- Restore the whole AOSP WM Shell behavior, not only `TYPE_CROSS_ACTIVITY`.
-- Prefer restoring Shell registry/runner/adapter wiring before writing custom Surface
-  animation code.
-- Restore cross-activity and cross-task registry entries only from non-null backing Xiaomi
-  Shell animation objects; do not replace missing objects with hand-written surface code.
-- On Android 17 / MiuiHome 4371, normalize only the exact standard fullscreen two-Task
-  predictive prepared shape whose native closing and opening adaptors, immutable Task identity,
-  observed ChangeInfo/TransitionInfo flags, bounds, display, leash ownership, and absolute layers
-  all match. Xiaomi emits both changes as `TO_FRONT`; change only the already-front closing Task
-  to `CHANGE`, preserve the opening Task as `TO_FRONT`, and restate the two native predictive
-  leash layers in the existing start transaction. Do not swap targets, transform either leash,
-  or apply this rule to freeform, return-to-home, cross-activity, or ambiguous shapes.
-- That Android 17 cross-task correction may include one additional full-task embedded
-  TaskFragment only when it belongs directly to the opening Task and the exact native
-  fragment token, container token, originally hidden state, prepared flags, unanimated
-  fragment Surface, default-display root and unrotated fullscreen bounds all match.
-  Retain both Task predictive adaptors and absolute leash-layer checks. Preserve the child
-  Change's opening mode, parent, flags, leash and stock Shell handling; correct only the
-  closing Task's role. Additional children, independent runners, partial bounds, rotation,
-  reparenting and uncertain identities must preserve the original transition.
-- On Android 17, preserve its mandatory prepared transition for an exact fullscreen
-  cross-Activity quarter-turn on the default display. Extend the existing closing-role
-  correction only when both immutable Activity/Task identities, native predictive adaptors,
-  original visibility and flags, full display bounds, singleton opening fixed-rotation state,
-  native rotation leash, transition root and absolute predictive layers all match.
-  Keep the opening Activity as `TO_FRONT` with its original non-`FILLS_TASK` flags and native
-  rotation geometry; change only the closing Activity to `CHANGE` and restate the original
-  predictive layers in the pending start transaction. Preserve the matching target-arrival
-  hold/resume lifecycle: the opening Change may lack `FILLS_TASK` only under that exact
-  fullscreen shape, with both ActivityTransitionInfo task IDs matching the focused Task and
-  no parent/lastParent. Resolve the Shell adapter through its actual runner contract and
-  exact callback/outer-controller shape, not an anonymous-class ordinal alone.
-  Do not swap targets, remove the rotation leash, suppress rotation,
-  or apply this exception to Android 16, freeform, embedded, letterboxed or ambiguous shapes.
-- For prepared remote animations, mark the tracker finished and call or wait for
-  `startPostCommitAnimation()` so the runner receives cancel/invoke before navigation
-  cleanup. Do not finish an active prepared animation directly from the overlay.
-- When an exact current freeform or fullscreen cross-activity prepared transition reaches
-  `BackTransitionHandler.startAnimation(...)` before its remote targets, defer only that original
-  invocation on the Shell owner. Prove the focused task through `BackNavigationInfo` and
-  `ShellTaskOrganizer`, require one matching prepared root and exactly two taskless Activity
-  changes with distinct Surface leashes and the expected roles, flags, bounds, display, and
-  immutable gesture-session owner. Two Activity instances may share the same component identity;
-  component equality alone is not ambiguity.
-  Resume the stock handler only after the same adapter publishes matching targets/callback, or
-  through the exact terminal cleanup path if navigation ends first. Any ambiguity or reflection
-  failure proceeds through the stock call; do not poll, delay by timeout, or retain a stale hold.
-- Run the complete release transaction on the Shell executor: synchronize the requested
-  trigger, read the active tracker's actual trigger, update focused-task/tracker state,
-  inspect the runner, and finish or enter post-commit there. The SystemUI input Looper must
-  not read or mutate these Shell-owned fields directly.
-- On a committed gesture with non-null navigation, publish
-  `BackNavigationInfo.getFocusedTaskId()` to the Shell back transition observer before
-  post-commit. A missing or explicitly cancelled runner may finish directly; a waiting
-  runner must wait, and a ready runner must enter post-commit.
-- Treat reflection failures while reading remote runner state as unknown. Keep the tracker
-  finished and wait for Shell's animation timeout instead of finishing navigation early.
-- A released gesture whose runner is waiting must remain finished and wait for animation
-  start. Preserve AOSP's legacy null-navigation behavior only for an ordinary in-app stream
-  whose exact MiuiHome accepted-DOWN identity, driver attachment epoch, and Shell controller
-  are still current and whose own `onGestureStarted(...)` changed a proven-false
-  `mReceivedNullNavigationInfo` into `true` while producing a null `BackNavigationInfo`. Keep
-  that physical stream and the native panel; on the Shell executor, publish
-  `INVALID_TASK_ID` to the back transition observer and inject
-  exactly one BACK DOWN/UP pair only when the ordered native tracker commits, then finish
-  navigation with the same trigger. Cancellation
-  sends no key. Launcher Overview, shade, drawer, editing and
-  other callback-only probes, Shell-busy or stale state, unaccepted/redirected streams,
-  reflection uncertainty, and every other null-navigation path still cancel and clean with
-  `finishBackNavigation(false)` without a fallback key.
-- Do not swap closing/entering targets or transform leashes, and do not force
-  alpha/visibility/layer order without new evidence for that exact fault. The only
-  exception is the `hyperos_slide_back_animation` switch (default off): it restyles the
-  native cross-activity animation's geometry mapping in place — a full-width closing
-  slide mapping the spring-smoothed delivered progress linearly (no gesture
-  interpolator: finger-following but always animated, cancel riding the same spring),
-  no scale and no vertical follow, quarter-width entering parallax at alpha 0.9 -> 1, and
-  a cubic ease-out ~400ms commit settle. Cross-task keeps its own native
-  `CrossTaskBackAnimation` (its differently shaped close transition drops the surface
-  under the cross-activity slide); the registry only ensures/restores that native
-  cross-task runner. The per-frame driver replaces the ProgressCallback the
-  animation registers on its own framework BackProgressAnimator, because R8 inlines the
-  private progress method. At commit the subclass rewrites the target rects to its 0.9
-  card pose, so the post-commit hook restores the full slide-out destination; the
-  committed close transition's own reparent (native handleCloseTransition) already keeps
-  the container pixels on the runner leashes. The revealed lower layer follows the finger:
-  its dim scrim tracks the finger during the drag, then fades on a critically damped
-  decay seeded with the release speed (leaving the committed value at the finger's rate,
-  no step and no lurch, decoupled from the geometry's ease-out). Fullscreen clears that
-  lower layer's radius so only the sliding top card is rounded. For an exact adopted
-  freeform root, both Activity targets instead receive Xiaomi's task-local corner radius.
-  For the stock default and slide geometries, inverse-map the fixed task bounds into each
-  moving target's local crop immediately before the animation transaction applies; keep custom
-  app-transition matrices and crops native.
-  The dim peaks at a fixed 0.5 to match
-  DefaultTransitionImpl's standard activity open/close dim, not the native predictive-back
-  scrim (0.8 dark / 0.2 light) which is calibrated for the scaled card. Targets, letterboxes, the
-  progress/commit/cancel lifecycle, and `finishAnimation()` stay native; a slide-hook failure
-  preserves the stock AOSP geometry for that gesture.
-  `TYPE_CROSS_TASK`, `TYPE_RETURN_TO_HOME`, and `TYPE_CALLBACK` are never restyled. With
-  the slide on, cross-task's native color-layer background is repainted pure black by
-  overwriting the color in the animation's own pending transaction (its stock hard-coded
-  dark tint otherwise clashes with the black slide); the geometry stays native.
-- Independently of that slide switch, adopt the stock cross-activity scrim and
-  `back-animation-background` into the exact current prepared root only for distinct targets in the
-  same non-negative Task when both are freeform and have identical non-empty local bounds. Require
-  one valid root, unchanged transition/apps/target identity, and a non-letterboxed root-local crop
-  matching the animation crop. Keep the scrim hidden until the first apply, then merge the root
-  crop/radius and both layer reparents into the animation's pending transaction. Keep the scrim
-  immediately below the closing leash, preserve its native dim, and set only the redundant
-  background alpha to zero. Apply the same Xiaomi task-local corner radius to the root and both
-  exact Activity targets before every native animation-frame transaction apply. For the stock
-  default and slide geometries, replace only each target's crop/radius with the inverse-mapped
-  intersection of its current rect and the fixed task frame; retain its matrix, position, alpha,
-  layer, and parent. If initial capture or adoption fails, discard the candidate and leave the
-  native layers unchanged. A later per-frame geometry failure stops target normalization without
-  undoing already-adopted layers; never fall back to suppressing their alpha. Native finish still
-  owns cleanup; preserve fullscreen and every other target shape.
-- Keep SystemUI's native `BackPanelController` as the sole indicator state owner: it
-  receives every claimed event and owns thresholds, release state, and haptics. The
-  optional HyperOS-style skin (`hyperos_indicator_style` remote preference, default off)
-  only suppresses the native panel's View alpha and draws a module-owned visual-only port
-  of MiuiHome's `GestureBackArrowView` in a non-touchable SystemUI overlay window, with
-  bitmaps loaded at runtime from `com.miui.home` resources. The skin follows Xiaomi's
-  native timing: nothing is drawn before the 20px horizontal, vertical-dominance intent
-  threshold, and the arrow icon lights only when the official 180px rule and the native
-  panel's ACTIVE/FLUNG/COMMITTED state both hold, so a lit arrow always matches the real
-  commit decision. It adds no input handling, and any preference, resource, window, or
-  panel-hide failure fails closed to the visible native panel. Haptics default to the
-  native BackPanel threshold feedback; the optional `hyperos_indicator_haptics` switch
-  (requires the skin) instead reproduces Xiaomi's two-stage haptics through the framework
-  `miui.util.HapticFeedbackUtil` — ready-back on uncancelled arrow fade-in completion (ext
-  effect 162, or 0 on `sys.haptic.version=2.0`), hand-up only on a panel-committed release
-  under Xiaomi's doFeedBack rule (non-V2 slow release or unfinished ready-back), with the
-  linear 140ms hand-up blocker — and suppresses only the hidden panel view's
-  `isHapticFeedbackEnabled` so no other SystemUI haptics change. The additional
-  `hyperos_indicator_haptics_enhanced` switch (requires the haptics switch) strengthens
-  the release stage: every panel-committed release plays hand-up, V2 devices use ext
-  effect 1 for hand-up instead of 0, and the 140ms blocker also applies to V2.
-  Unsupported effects or any failure in this chain fails closed to the native BackPanel
-  haptics. Avoid
-  MiuiHome-process arrow paths and any other custom-drawn fallback except for
-  native-indicator attachment diagnostics.
-- The optional HyperOS indicator material blur defaults off and depends on the HyperOS skin.
-  Reflect only the boot-framework Xiaomi View material APIs on a module-owned background child;
-  keep the arrow and bitmap fallback on an unblurred parent. Bound material with the live
-  bitmap's alpha silhouette and follow its existing gesture geometry and retract animation.
-  Use a display-wide, non-touchable sampling window only while material is requested;
-  recreate the ViewRoot when that preference changes and restore the bitmap window width.
-  Supply a rectangular native sampling Path. Preserve the bitmap's fractional edge alpha
-  with a linear-filtered mask on an unblurred container around the background child;
-  do not threshold the silhouette or hard-clip it with an Outline.
-  Keep material tint and content wash dark in both system themes, paired with the original
-  launcher arrow. Retain the live background bitmap's translucent white edge on the unblurred
-  parent, using its original brightness, fractional alpha and background destination rectangle.
-  Preserve the bitmap fallback's resource colors and alpha animations.
-  Missing support, an unreadable interface or rejected native state preserves the bitmap skin;
-  never force system blur support or settings. Hide and clear the material child on setup failure,
-  zero-sized geometry, new gestures, window replacement and hot-reload detach. Preserve all
-  input, panel-state, commit and haptic ownership.
-- Restore `TYPE_RETURN_TO_HOME` through the standard Shell-to-launcher callback/runner
-  registration. The confirmed entry is the Shell `IBackAnimation` binder in
-  `LauncherProxyService`'s external-interface bundle; make MiuiHome consume that standard
-  interface instead of reviving adapter injection or hand-written launcher surface
-  animation. `SurfaceControl.Transaction` remains allowed inside an AOSP-aligned launcher
-  runner registered through Shell.
-
-Return-to-home rules:
-
-- Treat the launcher callback and remote runner as independent Binder endpoints; do not
-  assume delivery order. Retain only the current generation's latest start/progress and at
-  most one terminal action, consume them exactly once when the runner arrives, and discard
-  them even when its targets are invalid.
-- Authenticate an unbound standard commit against the latest accepted DOWN. Once the exact
-  current runner session exists, bind a delayed commit against that session's immutable input
-  identity even if a newer accepted DOWN has replaced the process-global latest identity.
-  Preserve arbiter-generation, task, transition, attempt-order, and session ownership checks;
-  a current session must not authenticate a signal that fails its exact frozen identity.
-- Follow the platform `removeDepartTargetFromMotion()` split: use the `BackMotionEvent`
-  departing target when the flag is false and the runner closing target when it is true.
-  Use the platform `BackProgressAnimator` for smoothed progress and drive the same Xiaomi
-  `WindowElement` against only that closing leash; leave the opening Home target, alpha,
-  and layer order untouched. Drive Xiaomi preview blur from the same smoothed progress
-  rather than a separate or release-time snap.
-- Keep Shell gesture geometry in display coordinates. At the Xiaomi `WindowElement` boundary,
-  claim the unified preview only when the launcher's native WindowManager Home rotation is zero,
-  then convert only the spring start/target rects from its current display rotation to that native
-  Home coordinate space through Xiaomi's `CoordinateTransforms`. Initialize `ClipAnimationHelper`
-  with the launcher's root bounds, and convert the spring rect back through
-  `WindowElement.getSurfaceRotationRect(...)` before deriving display-space handoff geometry.
-  Verify cancel completion against the fullscreen rect in that same native Home coordinate space.
-  For a rotated native CLOSE, take handoff geometry from its real `SurfaceParams`; accept only a
-  non-empty origin-aligned crop contained by the fullscreen source instead of inferring its crop
-  from the Home-coordinate spring rect.
-  A nonzero Home rotation, launcher/closing-target rotation mismatch, or unreadable native geometry
-  fails closed.
-- Correct Xiaomi's prepared/commit composition only for the exact single fullscreen
-  standard task-to-Home shape. A valid prepared transition contains exactly the application
-  and Home changes, optionally plus one taskless wallpaper change when Shell already represents
-  the visible wallpaper. Use this same two-or-three-change definition everywhere prepared
-  identity or composition is revalidated. After stock prepare accepts it, keep Home and wallpaper
-  roles unchanged, reparent the departing task under the existing closing leash, and normalize
-  only its prepared role to `CHANGE`. Require Home flags `0x28001` for the three-change shape
-  with wallpaper and `0x28000` for the two-change shape without it; the application flags do not
-  vary with wallpaper presence. Fail closed for every other shape.
-- Keep both commit handoffs compositor-atomic. For an accepted standard `CLOSE` or `TO_BACK`
-  merge, append only the matching closing-change reparent to the original still-unapplied start
-  transaction at the accepted finish-callback boundary. For the exact rejected element-close
-  shape, merge the matching prepared finish transaction into Xiaomi's existing native start
-  transaction before its donor is applied and released. Never expose a prepared fullscreen
-  restore in a separate transaction ahead of Xiaomi's task reparent and start geometry.
-- Pass the original runner targets into Xiaomi's native closing provider and publish only
-  the exact current geometry and corner radius through Xiaomi's own handoff status.
-  Application pixels remain on the real closing task Surface; do not introduce a screenshot
-  replacement, module-owned icon/window crossfade, forced alpha, or layer manipulation.
-- Keep the preview `WindowElement` and its `RectFSpringAnim` running across commit. Standard
-  CLOSE remains driven by its authenticated Shell signal. For the exact rejected element-close
-  shape, enter Xiaomi's complete native closing provider only at the fully validated element
-  transition boundary, then allow the native `CLOSE_TO_HOME -> CLOSE_TO_ELEMENT` retarget on
-  that same animation; do not stop, replace, or restart the spring at commit.
-- Hold that preview spring's natural end through Xiaomi's own
-  `getSetAnimEndEnableCallbacks()` while the module is driving `CLOSE_TO_DRAG`. Restore the
-  callbacks before cancellation; a successful native closing-provider call adopts and re-enables
-  them. Cleanup must restore a still-held callback set, and an unexpectedly idle spring before
-  either native provider is a failed handoff rather than permission to rearm another owner.
-- Preserve Xiaomi's paired floating-icon lifecycle at that element boundary. Allow the provider
-  to initialize the unique target-matching `FloatingIconView2`, suppress only that temporary
-  view's drawing and visibility, and let Xiaomi's native reset/show/recycle path restore the real
-  launcher icon. Do not set `RectFParams.ignoreIcon` or hide the source `AppIcon`.
-- Once the exact Xiaomi CLOSE starts, retain the Shell runner and remote targets until its
-  matching native end or a verified launcher-interruption boundary. Do not restore or
-  release the preview Surface over a captured native animation.
-- Resolve `LocalWindowAnimImplementor.animTo$lambda$3(...)` only through either observed exact
-  parameter order: `(RectFParams, LocalWindowAnimImplementor)` or
-  `(LocalWindowAnimImplementor, RectFParams)`. Normalize both to the existing
-  implementor/params finish-epoch contract; any other signature or argument-role mismatch
-  fails closed.
-- For one animation and `animTo` epoch, preserve the first exact pre-clear finish snapshot.
-  A duplicate `StateManager` end callback after element/target cleanup must not overwrite
-  that terminal identity or keep the Shell runner alive.
-- When an exact cancelled `APP_TO_APP` preview spring is reused in place as launcher
-  `OPEN_FROM_HOME` before cancellation cleanup completes, finish the old return-home owner at
-  the verified main-Looper StateManager, element, animation, and configured-epoch boundary
-  without restoring its Surface, then let launcher OPEN adopt that spring. If an overlapping
-  runner is explicitly rejected while an existing owner remains, discard that runner's
-  remaining callback sequence exactly once; never let it seed the next runner.
-- Preserve Xiaomi's parallel CLOSE-to-OPEN path when an icon is clicked before CLOSE ends.
-  Finish the old Shell runner only after Xiaomi cancels the old application Surface and
-  accepts its `setToOld` boundary, before the new OPEN starts; do not cancel or wait for the
-  old floating-icon tail. Treat runner completion as one-way: hold the launcher OPEN callback
-  until SystemUI confirms Shell cleanup for the exact same runner, finish callback, and immutable
-  commit signal; a missing or stale finish receipt must not release it. Route a non-reusable
-  same-icon Local CLOSE only through Xiaomi's
-  existing parallel branch under exact identity guards; never fabricate Recents state or a
-  controller, or invoke the real-Recents reversal path. After that exact old-list boundary, a
-  module-owned element without a native recent transition must not be reset and reused as the
-  replacement OPEN. Correct `StateManager.isOldElementReuseful(...)` only when its original
-  result is `true` and the same main-Looper launch turn still matches the StateManager, old
-  element, animation identity, clicked View, old-list membership, CLOSE type, and completed
-  surface cancellation. Preserve original `false` results and genuine desktop native reuse;
-  let Xiaomi create the fresh element and request its normal remote OPEN.
-- Keep preview blur, shortcut-layer, and wallpaper state on MiuiHome's main Looper under
-  exact generation and object ownership. Commit transfers that state to Xiaomi;
-  cancellation restores only unchanged module-owned state after the application preview is
-  fullscreen. Never overwrite an unrelated or replacement native spring.
-- When an accepted DOWN waits for its exact launcher OPEN to end before Shell handoff, keep the
-  wallpaper in App state so Xiaomi's following CLOSE retains its native App-to-Home spring.
-  Suppress only the matching OPEN-finish Home `SystemWallpaperElement.setTo(...)` later in the
-  same main-Looper call stack, bound to the accepted input, OPEN generation and animation,
-  callback epoch, StateManager, wallpaper element, and Xiaomi-derived Home zoom. Expire an
-  unconsumed marker on the next main-Looper turn and invalidate it on a new OPEN or arbiter
-  generation, detach, and hot reload; do not apply the accepted-DOWN admission timeout to this
-  identity-bound marker. Preserve accepted native OPEN merges, ordinary OPEN cleanup, and
-  Xiaomi's native CLOSE `animTo(Home)`.
-- A prepared cancellation must continue through the launcher runner and Shell's normal
-  restore transition. Clear only a proven stale close-request gate while the exact
-  prepare-open token remains owned; never directly finish or clear the prepared animation.
-
-System-server compatibility rules:
-
-- Preserve `AnimationHandler.promoteToTFIfNeeded(...)` for every native Activity switch. Distinct
-  embedded TaskFragments must remain promoted before both prepared-transition construction and
-  remote-adaptor creation; the same embedded TaskFragment keeps the native Activity targets. Do
-  not gate promotion on the obsolete migrate flag. Keep the retired
-  `server_back_promote_to_tf_if_needed` hook neutralized across hot reload, but do not normally
-  install or backfill it.
-- Resolve window flags from `com.android.window.flags.Flags` first, Xiaomi's relocated
-  `com.android.internal.hidden_from_bootclasspath.com.android.window.flags.Flags` second,
-  and `android.window.flags.Flags` only as the legacy fallback. Unreadable migrate/unify
-  flags default to `false`.
-- Gate the `ScheduleAnimationBuilder.prepareTransitionIfNeeded(...)` skip through
-  `unifyBackNavigationTransition()`. When that flag resolves to `false`, preserve the
-  original `setLaunchBehind()` path; do not blanket-skip transition preparation. Never skip
-  the unified `TYPE_RETURN_TO_HOME` prepare path; if `mIsLaunchBehind` or the relevant flag
-  cannot be proven, preserve the original platform method.
-- In unified mode, preserve the native prepared transition for the exact single-Task freeform or
-  fullscreen cross-Activity shape only when the two distinct ActivityRecords are in the same
-  standard Task, the opening Activity is still hidden, and the supplied containers exactly match
-  `promoteToTFIfNeeded(...)` (the ActivityRecords themselves or their native embedded-TaskFragment
-  promotion). On Android 16's unified path, treat a shape for which the opening Activity's native
-  `DisplayContent.rotationForActivityInDifferentOrientation(...)` returns a concrete rotation as
-  non-exact and retain the compatibility skip; Xiaomi's prepared transition loses its stable roles
-  and close ownership when fixed rotation ends during the gesture. Xiaomi reports both prepared
-  changes as `TO_FRONT`; after WMS builds that exact
-  prepared `TransitionInfo` and before it is dispatched to Shell, set only the already-visible
-  departing Activity or embedded TaskFragment's final mode to AOSP `CHANGE`. Preserve
-  `FLAG_CHANGE_YES_ANIMATION` only when target calculation adds it to the promoted opening
-  TaskFragment; do not broadly mask other internal `ChangeInfo` flags. Preserve
-  both changes' flags, including the platform and Xiaomi predictive-back flags. After BLAST has
-  merged the exact prepared targets' sync transactions, reassert both captured predictive leashes'
-  native absolute layers in the existing start transaction so Xiaomi's initial parent-relative
-  leash layer cannot win by merge order; do not change their parent, alpha, visibility, or geometry.
-  Let the stock Shell handler perform the resulting closing/opening leash reparent in its original
-  transaction.
-  Keep the occluded opening Activity, runner targets, and all other state and shapes untouched.
-  Do not gate the exact native prepare on a module-owned readiness bit: if exact-shape inspection
-  is uncertain or the normalizer is unavailable or fails, preserve the platform prepare instead
-  of reviving the old skip fallback. Known non-exact unified non-home shapes retain the existing
-  compatibility skip. Preserve the normalizer hook's replacement, presence, and backfill lifecycle
-  across hot reload without maintaining separate readiness state.
-- Navigation-done cleanup may call `clearBackAnimations(false)` only after a committed
-  navigation when the handler is still composed and both prepared-open and prepared-close
-  transition fields are null. Leave normal transition-owned cleanup untouched.
-- When exposing an opening predictive-back target, convert
-  `BackWindowAnimationAdaptor.mTarget` with `WindowContainer.asTaskFragment()`, matching native
-  remote-target creation. Do not substitute `getTaskFragment()`: a `Task` is itself the required
-  `TaskFragment`, while that method is only a parent lookup for child containers.
-- Change a committed return-home window from `USE_OPACITY` to `ALLOW` only when the original
-  mode is `USE_OPACITY`, its standard Activity is no longer visible-requested and cannot
-  receive touch, the last back type is `TYPE_RETURN_TO_HOME`, and ownership is proven by
-  either `shouldPauseTouch(activity)` or the composed matching prepared-close target.
-  Reflection failure preserves the platform result.
-- Do not obtain launcher touch-through by fabricating a Recents input consumer/controller,
-  forwarding or replaying MotionEvents, or using a timer or process-wide token.
-  Cancellation, finish, replacement, and launcher OPEN must invalidate the server-owned
-  predicate naturally.
-
-Do not use direct `android.util.Log` writes for module diagnostics; keep diagnostics in
-LSPosed/module logs.
-
-## AOSP 16 QPR0 Alignment Status
-
-The authoritative AOSP reference revision is:
-
-```text
-tag: android-16.0.0_r1
-commit: 99b01a65cc4c104933788b3143285ab6bae65827
-```
-
-Discover a suitable local checkout instead of hard-coding a machine-specific path. If it
-is unavailable, fetch only the exact tag/projects/files needed. Checked-in reference
-snippets are under `refs/android16/aosp_back_16/shell/` and
-`refs/android16/aosp_back_16/systemui/`; do not assume the
-controller snippet is an exact r1 copy.
-
-The current implementation is AOSP-aligned but is not a completely stock AOSP input
-pipeline:
-
-- A module-created SystemUI `InputMonitor` and driver own claimed gesture processing instead
-  of routing the whole stream through stock
-  `EdgeBackGestureHandler -> BackAnimationImpl.onMotionEvent(...)`. MiuiHome's native
-  `GestureStubView`, not a module-created SystemUI shield, prevents InputDispatcher from
-  targeting the application with the original DOWN inside the native band.
-- Recents still starts Shell once on `ACTION_DOWN` so a null or stale non-callback target
-  can remain unpilfered. The app drawer follows the same callback-only launcher probe.
-  All paths wait for a matching MiuiHome accepted-DOWN token; ordinary in-app candidates
-  pilfer and start deferred Shell navigation together at `8dp`. Native GestureStub touch
-  regions and redirect state remain authoritative while its legacy processor stays
-  neutralized. When Shell is busy, the current behavior suppresses the new SystemUI gesture;
-  it does not implement AOSP `mQueuedTracker` semantics. Keep that exact physical stream
-  suppressed across Shell cleanup until its own `ACTION_UP` or `ACTION_CANCEL`; never reopen or
-  late-pilfer it after the navigation that caused the rejection finishes.
-- Release handling reflectively reproduces the relevant `onGestureFinished()` transaction
-  but does not call the complete private AOSP method. Preserve the Shell-executor ownership
-  and runner-state rules above unless new evidence justifies changing this boundary.
-
-Use the currently configured jadx MCP workspace to confirm Xiaomi method names,
-signatures, fields, transaction codes, and call sites before adding hooks. Jadx may render
-`com.android.wm.shell` with a numeric package segment; runtime names must use
-`com.android.wm.shell` without that segment.
-
-Hidden API optimization boundary:
-
-- Boot-classpath hidden APIs such as `android.window.BackNavigationInfo`,
-  `BackTouchTracker`, and `BackMotionEvent` may use compile-only stubs.
-- Do not add compile-only stubs or static type references for SystemUI/WM Shell
-  implementation classes. They live in the SystemUI APK ClassLoader.
-- Continue accessing those implementation classes through the real package ClassLoader and
-  reflection. Cache resolved `Method`/`Field` objects for hot calls.
-
-## Repository State
-
-Important files:
-
-```text
-settings.gradle
-build.gradle
-app/build.gradle
-hidden-api/build.gradle
-hidden-api/src/main/java/android/view/
-hidden-api/src/main/java/android/window/
-app/src/main/AndroidManifest.xml
-app/src/main/java/dev/codex/miuibackgesturehook/MiuiBackGestureHook.java
-app/src/main/java/dev/codex/miuibackgesturehook/ModuleApplication.kt
-app/src/main/java/dev/codex/miuibackgesturehook/PredictiveBackPreferences.java
-app/src/main/java/dev/codex/miuibackgesturehook/PredictiveBackSettingsActivity.kt
-app/src/main/resources/META-INF/xposed/module.prop
-app/src/main/resources/META-INF/xposed/java_init.list
-app/src/main/resources/META-INF/xposed/scope.list
-reports/
-```
-
-Compile-only dependencies:
-
-```gradle
-compileOnly "io.github.libxposed:api:102.0.0"
-compileOnly project(":hidden-api")
-```
-
-LSPosed metadata:
-
-```text
-minApiVersion=102
-targetApiVersion=102
-staticScope=true
-autoHotReload=true
-```
-
-The current module entry is:
-
-```java
-dev.codex.miuibackgesturehook.MiuiBackGestureHook
-```
-
-## LSPosed API 102 Notes
-
-- `XposedModule` has a no-argument constructor.
-- Use the API 102 lifecycle callbacks already implemented by the module:
-  `onModuleLoaded(...)`, `onPackageLoaded(...)`, `onSystemServerStarting(...)`,
-  `onHotReloading(...)`, and `onHotReloaded(...)`.
-- `PackageLoadedParam` exposes `getDefaultClassLoader()`, not `getClassLoader()`.
-- Logging uses `log(int priority, String tag, String message)`.
-- `XposedInterface.Chain` exposes `getArgs()`, `getArg(int)`, `getThisObject()`, and
-  `proceed()`.
-
-## Development Guidelines
-
-## MiuiHome Native Crash Recovery
-
-- If a native MiuiHome experiment crashes into a loop, first fail closed through
-  `safe_lsposed_native_deploy.py`'s PackageManager rollback path, replace only
-  the exact `hyos_spawner`, and explicitly start Home. Never clear or write
-  RescueParty properties, and do not clear launcher application data.
-- Once the crash loop has stopped and `SafeLauncher` is stable, explicitly ask the user
-  to reinstall the exact previously active supported MiuiHome package once. Do not repeatedly send
-  `exit_safeMode`, repeatedly start `.launcher.Launcher`, or assume those actions can
-  clear this build's persisted SafeLauncher selection.
-- Do not reinstall MiuiHome on the user's behalf unless they explicitly request it.
-  A missing Launcher immediately after a clean spawner replacement must first be
-  recovered with one explicit standard HOME Activity start. Ask the user to
-  reinstall that exact package once only if rollback plus that start still
-  leaves persistent SafeLauncher/crash-loop state. After completion, verify
-  the exact package identity, the normal Launcher component, absence of a continuing native
-  crash loop, and the current APK native generation before any further test.
-
-- Prefer Java for hook/runtime code; keep the existing Kotlin/Compose application UI in Kotlin.
-- Use the modern LSPosed/libxposed API already declared by the project.
-- Keep hooks small and heavily logged.
-- Keep scope minimal while testing.
-- Keep `AGENTS.md` limited to goals, operating boundaries, preserved invariants,
-  prohibited approaches, and development workflow. Do not use it as an implementation
-  report, experiment timeline, log summary, or version changelog.
-- Put implementation notes, reverse-engineering evidence, experiment results, and
-  historical findings under a topic-specific directory in `reports/`.
-- Write reports as reusable explanations of the failure, native contract, fix rationale,
-  evidence, and validation limits. Put durable operating boundaries and prohibitions in
-  `AGENTS.md` and reference them from reports. Keep session narration, tool-call counts,
-  approval history, and workspace/build bookkeeping out of the report narrative;
-  retain raw evidence and artifact metadata in supporting files.
-- Number experiment directories chronologically as
-  `reports/NNN-short-topic/README.md`, starting at `001`. Once assigned, do not renumber or
-  reuse a number; later work on the same experiment updates its existing report.
-- Keep `reports/` local and ignored; never stage or commit files under it.
-- Keep behavior, diagnostics, and documentation changes in atomic commits.
-- Build every test APK as release. Store each test revision in a separate stash and commit
-  it with a signature only after real-device confirmation.
-- Preserve the shared signing configuration: when complete local or environment credentials are
-  available, debug and release must use the same configured key. Keep keystores and credentials
-  ignored and never hard-code them in Gradle or source.
-
-## Useful Commands
-
-Build test APKs as release:
-
-```powershell
-.\gradlew.bat assembleRelease
-```
-
-Before handing an APK to the user, use a clean build for the requested variant so
-incremental packaging cannot leave stale ZIP slack in the artifact:
-
-```powershell
-.\gradlew.bat clean assembleRelease
-```
-
-`versionCode` is derived from the Git commit count. After committing the final source, rebuild the
-artifact before handoff; do not reuse an APK produced from the same source before that commit.
-
-Check release APK metadata:
-
-```powershell
-jar tf app\build\outputs\apk\release\app-release.apk | Select-String -Pattern 'META-INF/xposed|classes\d*\.dex|AndroidManifest.xml'
-```
-
-Check that the release APK is from the current build:
-
-```powershell
-Get-Item app\build\outputs\apk\release\app-release.apk | Select-Object FullName,Length,LastWriteTime
-```
-
-If `jar` is not on `PATH`, resolve it from the active Java runtime:
-
-```powershell
-$jar = Join-Path (Split-Path (Get-Command java).Source -Parent) 'jar.exe'
-& $jar tf app\build\outputs\apk\release\app-release.apk | Select-String -Pattern 'META-INF/xposed|classes\d*\.dex|AndroidManifest.xml'
-```
-
-Git status:
-
-```powershell
-git status --short
-```
+This LSPosed API-102 module restores Xiaomi/MIUI back gestures and optional system-UI behavior.
+
+## Scope and decisions
+
+- Preserve working callback, cross-Activity, cross-Task and return-to-Home navigation.
+- Within the requested feature and these boundaries, investigation, fixes and hook-location
+  changes do not need separate approval. Changes to safety, authentication or process scope
+  require explicit user direction; a previous implementation is not an approval boundary.
+- Keep static scope limited to `com.android.systemui`, `com.miui.home`,
+  `com.mi.android.globallauncher`, `com.google.android.googlequicksearchbox` and `system`.
+  Do not hook selected opt-in applications or the voice-assistant process.
+
+## Device safety
+
+- Never write Android system properties, including through helpers or recovery commands.
+  Do not execute `setprop`, even with an unchanged value.
+- Deliver the native entry only inside a complete APK through PackageManager and LSPosed's
+  framework-owned HYOS injection. Never separately extract, push, overwrite or activate its
+  `.so`, or modify/truncate any mapped native payload.
+- Use `python3 miui-home-hyos-native/safe_lsposed_native_deploy.py` for every native APK
+  update. It must prove API-102 hot reload without restarting SystemUI, replace only the exact
+  owning root `hyos_spawner`, and verify Launcher parentage, current APK mapping/inode,
+  native readiness and absence of new tombstones. Do not bypass a failed safety check.
+- Do not use module-local marker files as native runtime gates, install a standalone native
+  module/controller, or deploy while a retired standalone owner remains mapped.
+- Recover native crash loops through the deployment script's whole-APK rollback and exact
+  spawner replacement, followed by one standard HOME start. Never clear launcher data or
+  manipulate RescueParty properties. Reinstalling the launcher requires the user's request;
+  persistent SafeLauncher after rollback/HOME recovery must be reported before further tests.
+
+## Platform and authentication
+
+- Android 16 may use launcher Java hooks. Android 17+ must keep MiuiHome in static scope for
+  the APK native entry, register no launcher-process Java hooks, and remove inherited Java
+  handles during hot reload. The native entry is exclusive to `com.miui.home`.
+- POCO Java support is Android 16 only. Bind sender checks, resources and explicit targets
+  to one selected launcher package per process generation; never trust both interchangeably.
+- Authenticate explicit cross-process broadcasts by exact shared caller package and sending-UID
+  ownership; bind state to its current owner/generation and commands to their immutable session.
+  Missing, malformed, stale or ambiguous state grants no capability; do not trust arbitrary UIDs.
+- Contextual-search platform calls belong to SystemUI on Android 16 and MiuiHome on Android
+  17+. Authenticate the Google provider callback independently against its exact package.
+- Use the declared SDK/NDK toolchain and configured analysis tools. Prefer DexSQL for APK/DEX
+  work; use only configured MCP servers for JADX/Ghidra, respecting global readiness rules.
+  Do not enable disabled JADX without user direction or invoke local JADX/Ghidra as a fallback.
+
+## Input and animation ownership
+
+- SystemUI owns claimed side-gesture input, pilfering and native BackPanel decisions; Shell
+  owns predictive navigation. Preserve Xiaomi's physical edge windows, redirect/exclusion
+  policy and the authenticated matching accepted-DOWN boundary before claiming a stream.
+- Preserve native cancellation, ordered release decisions, IME behavior and display policy.
+  Do not revive the retired GestureStub/BackAnimationAdapter injection path, duplicate a
+  touchable shield, replay/transfer rejected input or force a cancelled gesture to commit.
+- Preserve Xiaomi OPEN interruption and the existing guarded BACK fallbacks. An accepted
+  native merge must not also send BACK. Bind handoffs and suppression to the exact attempt;
+  do not replace identity checks with process-wide timers, polling or distance-only commits.
+- Use each state owner's executor/Looper. Never inspect or mutate Shell-owned animation
+  maps, trackers or runner state from the input Looper. Stale owners cannot finish a successor.
+- Prefer existing Shell/Xiaomi runners and live task Surfaces. Preserve prepare, invoke/cancel,
+  post-commit and cleanup ownership; do not substitute screenshots, guessed Surface animation,
+  swapped targets or early prepared-animation completion for a missing native path.
+- Resolve new native/Dart hooks from the current mapped image and prove ABI, layout and call
+  relationships. Do not introduce launcher-version offsets or guessed layouts. Ambiguity
+  preserves original behavior and disables only the unresolved optional extension.
+- Assembly observers preserve live registers and NZCV and make no Dart/C++ calls. Invalidate
+  stale observations and drain active observers before changing their owner/configuration.
+
+## Optional features and user state
+
+- Disabled optional features preserve original behavior. Google optional features and
+  predictive opt-in selections default off/empty; unreadable configuration grants no opt-in.
+- CTS reuses Xiaomi's existing long-press admission and CTS helper/branch. Do not add a global
+  MotionEvent hook, synthetic input or second bottom-gesture recognizer. MarkOnly completion
+  alone is not feature permission. Home may change only the admitted `NavLongPress` action
+  while CTS is enabled; preserve the original lookup/await and the user's saved gesture setting.
+- Feature-query overrides are limited to the exact capability queries validated for the
+  enabled CTS/Google feature. Preserve unknown queries and unsuccessful/error results.
+  Do not hook consuming FnOnce shims, copy GPL implementations or hand-write voice Binder calls.
+- Preserve capture consent and Google's own provider/capture/submission flows. Never forge
+  capture tokens/screenshots, spoof device identity, globally enable Labs or edit Phenotype.
+- Predictive opt-in changes only selected applications' current launch ActivityInfo through
+  API-102 remote preferences and existing `system` scope; never mutate shared ApplicationInfo.
+  Preserve metadata exclusions, stale-selection pruning and the incompatible-app warning.
+- Preserve window-requested bar appearance and native gesture-line/indicator lifecycle.
+  Visual options cannot change input ownership or native commit/cancel decisions.
+
+## Hook lifecycle
+
+- Keep `autoHotReload=true`. Hook IDs cover normal installation, old-handle replacement,
+  presence tracking and missing-hook backfill together; failed replacement remains missing.
+- During hot reload, detach owned monitors/windows, unregister receivers/listeners and
+  invalidate generations and pending attempts before restoring explicitly supported state.
+  No duplicate owner, monitor, receiver or callback may survive reload.
+- Keep `system` scope and recover the real system-server ClassLoader across cold/hot load;
+  do not rely on one lifecycle boolean. Access Shell/SystemUI implementation classes through
+  their actual ClassLoader and cached reflection; compile-only stubs are for platform APIs.
+- Java hot reload must never unload or replace the native entry. A new native payload takes
+  effect only through the clean framework-owned spawner replacement above.
+
+## Verification and delivery
+
+- Use Debug for iterative device tests and Release for final delivery. Run checks relevant to
+  the changed behavior; broaden/repeat them only for a new change, failure or unresolved risk.
+- Before APK handoff, clean-build the requested variant, verify signing/alignment and use
+  the shared configured signing key. Keep keys and credentials out of source control.
+- `versionCode` uses the Git commit count: rebuild after the final source commit before
+  handing over an artifact. Preserve API-102 hot-reload verification after installation.
+- Keep native test revisions in separate stashes. Sign commits after required validation;
+  device behavior changes need real-device confirmation, not just compilation or counters.
+- Formal side-handoff evidence requires exactly one fresh gesture in a captured session
+  proving matching native accepted-DOWN, SystemUI acceptance/pilfer and Shell start. Capture
+  any readiness warmup separately; visuals or a hook counter alone are not takeover proof.
+- Use LSPosed/module diagnostics rather than direct `android.util.Log` writes.
+
+## Documentation and artifacts
+
+- Keep this file limited to durable boundaries. Do not append investigation timelines,
+  version-specific recipes, dumps, method inventories or build logs.
+- For changes to runtime behavior, consult only the relevant section of
+  [runtime contracts](docs/runtime-contracts.md); routine unrelated edits need no full reread.
+  Implementation details describe existing code, not extra permission requirements.
+- Keep research evidence/history under numbered, topic-specific `reports/` directories;
+  keep reusable contracts in versioned documentation or code/tests. Never commit `reports/`,
+  proprietary binaries/decompilation, signing secrets or generated native/device outputs.
