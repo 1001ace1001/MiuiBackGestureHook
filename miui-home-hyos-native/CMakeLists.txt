@@ -26,6 +26,7 @@ set(MIUI_HOME_NATIVE_SOURCES
     broadcast_options_tail_hook.S
     broadcast_send_capture_hook.S
     dart_state_hooks.S
+    contextual_home_action_hook.S
     input_monitor_pilfer_hook.S
 )
 set(MIUI_HOME_NATIVE_TARGET miui_home_hyos_lsp)

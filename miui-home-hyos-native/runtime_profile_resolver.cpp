@@ -1450,6 +1450,153 @@ bool ValidateEntry(const ElfView& view, void* app_entry_point,
 
 }  // namespace
 
+static bool ResolveContextualLongPressDispatch(const uint8_t* base, uintptr_t* entry_offset) {
+    if (entry_offset == nullptr) return false;
+    *entry_offset = 0u;
+    ElfView view{};
+    uintptr_t action_got = 0u, x_got = 0u, y_got = 0u;
+    if (!ParseElf(base, &view)
+            || !FindImportGot(view, kMotionActionMasked, &action_got)
+            || !FindImportGot(view, kMotionRawX, &x_got)
+            || !FindImportGot(view, kMotionRawY, &y_got)) return false;
+    uintptr_t found = 0u;
+    uint32_t count = 0u;
+    for (size_t index = 0; index < view.load_count; ++index) {
+        const auto& load = view.loads[index];
+        if ((load.flags & (PF_R | PF_X)) != (PF_R | PF_X)) continue;
+        for (uintptr_t call = (load.start + 3u) & ~uintptr_t{3}; call + 16u <= load.end; call += 4u) {
+            // LongPressManagerInner::dispatch_active(self, event) selects its
+            // native Default/Enhanced handler, then feeds the same event to
+            // the detector. Both window and monitor paths converge here.
+            if (call < load.start + 56u || !CallTargetsImport(view, call, action_got)
+                    || !InstructionEquals(view, call - 24u, 0xaa0003f3u)
+                    || !InstructionEquals(view, call - 20u, 0xaa0103f4u)
+                    || !InstructionEquals(view, call - 12u, 0xaa1403e0u)
+                    || !InstructionEquals(view, call - 8u, 0x7100051fu)
+                    || !InstructionEquals(view, call + 4u, 0x2a0003f5u)
+                    || !InstructionEquals(view, call + 8u, 0x7100301fu)) continue;
+            const uintptr_t entry = call - 56u;
+            uint32_t instruction = 0u;
+            uintptr_t frame_offset = 0u, alternate = 0u, coordinates = 0u;
+            if (!ReadInstruction(view, entry, &instruction)
+                    || (instruction & 0xffc003ffu) != 0xd10003ffu
+                    || !ReadInstruction(view, entry + 4u, &instruction)
+                    || (instruction & 0xffc07fffu) != 0x6d0023e9u
+                    || !ReadInstruction(view, entry + 8u, &instruction)
+                    || (instruction & 0xffc07fffu) != 0xa9007bfdu
+                    || !ReadInstruction(view, entry + 24u, &instruction)
+                    || !DecodeAddImmediate(instruction, 29u, 31u, &frame_offset)
+                    || !ReadInstruction(view, entry + 28u, &instruction)
+                    || (instruction & 0xffc003ffu) != 0x39400008u
+                    || !ReadInstruction(view, entry + 40u, &instruction)
+                    || (instruction & 0xff00001fu) != 0x34000008u
+                    || !DecodeConditionalBranchTarget(view, call - 4u, 1u, &alternate)
+                    || alternate <= call + 12u || alternate > call + 0x200u
+                    || !CallTargetsImport(view, alternate, action_got)) continue;
+            bool saved = true;
+            for (uint32_t pair = 0u; pair < 3u; ++pair) {
+                if (!ReadInstruction(view, entry + 12u + pair * 4u, &instruction)
+                        || (instruction & 0xffc07fffu) != (0xa90003e0u
+                                | ((23u - pair * 2u) << 10u) | (24u - pair * 2u))) saved = false;
+            }
+            // Independently prove each handler's valid-action branch and
+            // explicit pointer-index-zero X/Y reads; neither input route is
+            // inferred from Home state or from a launcher version/address.
+            const uintptr_t handlers[] = {call, alternate};
+            for (uintptr_t handler : handlers) {
+                if (!InstructionEquals(view, handler + 4u, 0x2a0003f5u)
+                        || !InstructionEquals(view, handler + 8u, 0x7100301fu)
+                        || !DecodeConditionalBranchTarget(view, handler + 12u, 9u, &coordinates)
+                        || coordinates <= alternate || coordinates > alternate + 0x200u
+                        || !InstructionEquals(view, coordinates, 0xaa1403e0u)
+                        || !InstructionEquals(view, coordinates + 4u, 0xaa1f03e1u)
+                        || !CallTargetsImport(view, coordinates + 8u, x_got)
+                        || !InstructionEquals(view, coordinates + 12u, 0xaa1403e0u)
+                        || !InstructionEquals(view, coordinates + 16u, 0xaa1f03e1u)
+                        || !CallTargetsImport(view, coordinates + 24u, y_got)) saved = false;
+            }
+            if (!saved) continue;
+            found = entry;
+            ++count;
+        }
+    }
+    if (count != 1u) return false;
+    *entry_offset = found;
+    return true;
+}
+
+bool ResolveContextualLongPressInput(const uint8_t* base, uintptr_t* entry_offset) {
+    if (entry_offset == nullptr) return false;
+    *entry_offset = 0u;
+    uintptr_t dispatcher = 0u;
+    if (!ResolveContextualLongPressDispatch(base, &dispatcher)) return false;
+    ElfView view{};
+    uintptr_t id_got = 0u, finish_got = 0u, action_got = 0u;
+    if (!ParseElf(base, &view)
+            || !FindImportGot(view, "input_MotionEvent_getId", &id_got)
+            || !FindImportGot(view, "input_InputEventReceiver_finish_input_event", &finish_got)
+            || !FindImportGot(view, kMotionActionMasked, &action_got)) return false;
+    uintptr_t found = 0u;
+    uint32_t count = 0u;
+    for (size_t index = 0; index < view.load_count; ++index) {
+        const auto& load = view.loads[index];
+        if ((load.flags & (PF_R | PF_X)) != (PF_R | PF_X)) continue;
+        for (uintptr_t call = (load.start + 3u) & ~uintptr_t{3}; call + 48u <= load.end; call += 4u) {
+            // systemui_shared::InputEventReceiverCallbackCompat owns the
+            // monitor feeding the long-press manager. The similarly named
+            // gesture::input_consumer callback is a different input route.
+            // Prove this receiver by id -> action -> finish(receiver, token,
+            // id, true), its fourth-argument event and the direct manager call.
+            if (call < load.start + 64u || !CallTargetsImport(view, call, id_got)
+                    || !InstructionEquals(view, call - 24u, 0xa9405413u)
+                    || !InstructionEquals(view, call - 20u, 0xaa0303e0u)
+                    || !InstructionEquals(view, call - 16u, 0xaa0303f4u)
+                    || !InstructionEquals(view, call - 12u, 0xaa0203f7u)
+                    || !InstructionEquals(view, call - 8u, 0xaa0103f8u)
+                    || !InstructionEquals(view, call + 4u, 0x2a0003f9u)
+                    || !InstructionEquals(view, call + 8u, 0xaa1403e0u)
+                    || !CallTargetsImport(view, call + 12u, action_got)
+                    || !InstructionEquals(view, call + 16u, 0x2a0003f6u)
+                    || !InstructionEquals(view, call + 20u, 0xaa1703e0u)
+                    || !InstructionEquals(view, call + 24u, 0xaa1803e1u)
+                    || !InstructionEquals(view, call + 28u, 0x2a1903e2u)
+                    || !InstructionEquals(view, call + 32u, 0x52800023u)
+                    || !CallTargetsImport(view, call + 36u, finish_got)) continue;
+            const uintptr_t entry = call - 64u;
+            uint32_t instruction = 0u;
+            uintptr_t frame_offset = 0u;
+            if (!ReadInstruction(view, entry, &instruction)
+                    || (instruction & 0xffc003ffu) != 0xd10003ffu
+                    || !ReadInstruction(view, entry + 4u, &instruction)
+                    || (instruction & 0xffc003ffu) != 0xfd0003eau
+                    || !ReadInstruction(view, entry + 8u, &instruction)
+                    || (instruction & 0xffc07fffu) != 0x6d0023e9u
+                    || !ReadInstruction(view, entry + 12u, &instruction)
+                    || (instruction & 0xffc07fffu) != 0xa9007bfdu
+                    || !ReadInstruction(view, entry + 36u, &instruction)
+                    || !DecodeAddImmediate(instruction, 29u, 31u, &frame_offset)) continue;
+            bool saved = true;
+            for (uint32_t pair = 0u; pair < 5u; ++pair) {
+                if (!ReadInstruction(view, entry + 16u + pair * 4u, &instruction)
+                        || (instruction & 0xffc07fffu) != (0xa90003e0u
+                                | ((27u - pair * 2u) << 10u) | (28u - pair * 2u))) saved = false;
+            }
+            uint32_t dispatcher_calls = 0u;
+            for (uintptr_t site = call + 40u; site < entry + 0x3000u; site += 4u) {
+                uintptr_t target = 0u;
+                if (DecodeBlTarget(view, site, &target) && target == dispatcher
+                        && InstructionEquals(view, site - 4u, 0xaa1403e1u)) ++dispatcher_calls;
+            }
+            if (!saved || dispatcher_calls != 1u) continue;
+            found = entry;
+            ++count;
+        }
+    }
+    if (count != 1u) return false;
+    *entry_offset = found;
+    return true;
+}
+
 bool ResolveSideBoundaryProfile(const uint8_t* base, void* app_entry_point,
                                 ResolutionStorage* storage,
                                 ResolutionDiagnostics* diagnostics) {

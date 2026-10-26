@@ -165,6 +165,15 @@ Android 17 launcher safety rule:
   must independently prove one PackageManager-backed support function, its one direct Xiaomi
   invoke caller, and one normal `Fn` carrying the exact completion release-store shape; ambiguity
   leaves all contextual-search offsets empty without rejecting the base dynamic side profile.
+- For Home's existing Dart long-press route, the resolved per-invocation action may be
+  overridden only for the exact `NavLongPress` source after native Home gesture admission,
+  while the authenticated Circle to Search preference is enabled. Preserve the original
+  action lookup/await and use Xiaomi's existing CTS branch; never write the user's saved
+  gesture setting or replace its recognizer. Uniquely prove the caller, lookup/await,
+  CTS constant comparison and CTS callee, deriving frame and pool locations from that graph.
+  Preserve live registers and NZCV, make no Dart/C++ calls from the assembly observer, and
+  retain owner-epoch, retirement and remap guards. Disabled preferences, ambiguous graphs
+  and source/layout mismatches preserve the original action.
 - Mirror the Circle to Search preference on the existing explicit SystemUI-to-MiuiHome arbiter
   broadcast. Store it only after the shared caller package and sending UID pass the existing
   authentication and the generation is current. Missing, malformed, stale, or unauthenticated

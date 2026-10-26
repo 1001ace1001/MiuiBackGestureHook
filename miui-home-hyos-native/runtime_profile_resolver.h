@@ -71,4 +71,10 @@ bool ResolveContextualSearchOverlay(
         ResolutionStorage* storage,
         ResolutionDiagnostics* diagnostics);
 
+// Resolve the physical monitor that starts Xiaomi's native bottom-long-press
+// manager, before dispatch-disabled redirection can bypass further detector
+// delivery. Require both the manager's handler graph and this receiver's exact
+// id/action/finish import graph and direct call relationship.
+bool ResolveContextualLongPressInput(const uint8_t* base, uintptr_t* entry_offset);
+
 }  // namespace miui_home_runtime_profile
