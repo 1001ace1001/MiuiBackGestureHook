@@ -1751,21 +1751,30 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                 systemHasNavigationBar = requireSystemUiPlatformImpl()
                         .canCreateNavBarOrTaskBar(controller, displayId);
             }
-            boolean headlessDesired = displayId == 0
+            // HyperOS 3.0.319's SystemUI seeds mHideGestureLine from the android
+            // Settings.Global table at NavigationModeController construction, while the
+            // Settings UI persists the user's hidden-line toggle through the
+            // MiuiSettings.Global table, and the SettingsManager observer that would push
+            // the MIUI-table value into mHideGestureLine never fires during boot. The
+            // field therefore cannot express the user's intent on this ROM and must not
+            // gate module input. Gate on the fsg gesture mode plus the hard safety
+            // bounds instead: flip tiny-screens never claim input, a real
+            // NavigationBar/Taskbar owner routes through the owner-anchored install
+            // below rather than the headless lease, and the hide value stays in the
+            // diagnostic vector for on-device confirmation.
+            boolean fsgBackInput = displayId == 0
                     && fsgMode
-                    && hideGestureLine
                     && !flipTinyScreen
-                    && !hasNativeOwner
                     && backAnimation != null;
+            boolean headlessDesired = fsgBackInput && !hasNativeOwner;
             if (headlessDesired && !systemHasNavigationBar) {
-                // HyperOS 3.0.319 answers hasNavigationBar(default display) with false
-                // on FSG phones, and that same answer is what suppresses Xiaomi's own
-                // AOSP NavigationBar in createNavigationBar. Requiring the platform's
-                // bar admission here vetoed the lease exactly in the state it exists
-                // for: a gesture phone without any AOSP NavigationBar. The lease adds
-                // no window and claims side input only behind the authenticated
-                // accepted-DOWN arbiter grant, so keep attaching and record the
-                // platform answer for diagnosis instead of silently declining.
+                // The platform's hasNavigationBar answer is a diagnostic here, not a
+                // gate: build 127 measured it false on one HyperOS 3.0.319 boot and true
+                // on the next while the reconciler's map read (hasNativeOwner) disagreed
+                // with it both times, so it cannot express whether a live owner will
+                // exist. The lease adds no window and claims side input only behind the
+                // authenticated accepted-DOWN arbiter grant, so keep attaching and
+                // record the platform answer for diagnosis instead of declining.
                 moduleLog(Log.INFO, TAG, "Headless SystemUI NavigationBar eligible"
                         + " without platform nav-bar admission"
                         + ", systemHasNavigationBar=false"
@@ -1808,12 +1817,16 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                 return;
             }
             if (existing != null && hasNativeOwner) {
-                detachHeadlessNavBarLease(existing, reason + ":nativeOwnerReady");
-                return;
+                if (!detachHeadlessNavBarLease(existing, reason + ":nativeOwnerReady")) {
+                    return;
+                }
+                existing = null;
             }
             if (existing != null && !headlessDesired) {
-                detachHeadlessNavBarLease(existing, reason + ":noLongerHeadless");
-                return;
+                if (!detachHeadlessNavBarLease(existing, reason + ":noLongerHeadless")) {
+                    return;
+                }
+                existing = null;
             }
             if (existing != null) {
                 if (existing.navigationMode != navigationMode) {
@@ -1839,12 +1852,21 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                     return;
                 }
             }
+            if (fsgBackInput && hasNativeOwner) {
+                anchorNativeOwnerBackInput(controller, edgeBackGestureHandler,
+                        backAnimation, reason);
+                return;
+            }
             if (!headlessDesired) {
                 logHeadlessNavBarDecline(displayId, navigationMode, fsgMode,
                         hideGestureLine, flipTinyScreen, systemHasNavigationBar,
                         hasNativeOwner, backAnimation != null, reason);
                 return;
             }
+            moduleLog(Log.INFO, TAG, "Headless SystemUI NavigationBar lease attaching"
+                    + ", systemHasNavigationBar=" + systemHasNavigationBar
+                    + ", hideGestureLine=" + hideGestureLine
+                    + ", reason=" + reason);
             attachHeadlessNavBarLease(controller, navBarHelper,
                     edgeBackGestureHandler, backAnimation, navigationMode, reason);
         } catch (Throwable throwable) {
@@ -1866,7 +1888,8 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                                             boolean systemHasNavigationBar,
                                             boolean hasNativeOwner,
                                             boolean hasBackAnimation, String reason) {
-        String state = "displayId=" + displayId
+        String state = "reason=" + reason
+                + ", displayId=" + displayId
                 + ", mode=" + navigationMode
                 + ", fsgMode=" + fsgMode
                 + ", hideGestureLine=" + hideGestureLine
@@ -1879,8 +1902,15 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
         }
         lastHeadlessNavBarDeclineState = state;
         moduleLog(Log.INFO, TAG, "Headless SystemUI NavigationBar not desired"
-                + ", " + state
-                + ", reason=" + reason);
+                + ", reason=" + reason
+                + ", displayId=" + displayId
+                + ", mode=" + navigationMode
+                + ", fsgMode=" + fsgMode
+                + ", hideGestureLine=" + hideGestureLine
+                + ", flipTinyScreen=" + flipTinyScreen
+                + ", systemHasNavigationBar=" + systemHasNavigationBar
+                + ", hasNativeOwner=" + hasNativeOwner
+                + ", hasBackAnimation=" + hasBackAnimation);
     }
 
     protected boolean isCurrentHeadlessNavBarLifecycle(Object edgeBackGestureHandler) {
@@ -1908,14 +1938,18 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
             boolean taskbarInitialized = Boolean.TRUE.equals(
                     readField(taskbarDelegate, "mInitialized"));
             boolean fsgMode = Boolean.TRUE.equals(readField(injector, "mIsFsgMode"));
-            boolean hideGestureLine = Boolean.TRUE.equals(
-                    readField(injector, "mHideGestureLine"));
             boolean updaterRegistered = containsIdentity(
                     readField(lease.navBarHelper, "mStateListeners"), lease.updaterProxy);
             boolean backAnimationCurrent = readField(
                     taskbarDelegate, "mBackAnimation") == lease.backAnimation;
+            // mHideGestureLine is excluded: on HyperOS 3.0.319 it reads the android
+            // Settings.Global table the Settings UI never writes, so requiring it here
+            // would reject the lease in the exact state it was attached for. The
+            // hard bounds still fail closed: any real bar/taskbar owner, fsg leaving
+            // gesture mode, an unregistered updater or a replaced back animation
+            // invalidate the lease at DOWN.
             if (defaultNavigationBar != null || taskbarInitialized
-                    || !fsgMode || !hideGestureLine || !updaterRegistered
+                    || !fsgMode || !updaterRegistered
                     || !backAnimationCurrent) {
                 scheduleHeadlessNavBarReconcile(lease.controller, "inputDown:staleLease");
                 return false;
@@ -2039,6 +2073,50 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
             throw new IllegalStateException("Failed to attach headless NavBar lease",
                     throwable);
         }
+    }
+
+    /**
+     * Installs the module back-input driver onto a live native NavigationBar/Taskbar
+     * owner. HyperOS 3.0.319 (SystemUI 16.03.251211) strips
+     * SystemUIInitializer.prepareSysUIComponentBuilder to a no-op, so the per-bar
+     * BackAnimation Optional seeded through ReferenceSysUIComponentImpl never populates
+     * and the system's own NavigationBar attach path never calls
+     * EdgeBackGestureHandler.setBackAnimation; the owner-path trigger is structurally
+     * dead. The module performs the identical call the working wiring would make (the
+     * same call NavigationBarControllerImpl.initializeTaskbarIfNecessary makes for the
+     * taskbar), driving Xiaomi's real setter so handler state mutates through SystemUI
+     * code, while the module's setBackAnimation hook installs the input driver. No
+     * window is created or modified and the bar keeps its native lifecycle. Main-thread
+     * confined.
+     */
+    protected void anchorNativeOwnerBackInput(Object controller, Object edgeBackGestureHandler,
+                                               Object backAnimation, String reason)
+            throws Exception {
+        if (edgeBackGestureHandler == null) {
+            moduleLog(Log.INFO, TAG, "Cannot anchor back input to native owner yet"
+                    + ", controller=" + shortObject(controller)
+                    + ", reason=" + reason
+                    + ", edgeBackGestureHandler=null");
+            return;
+        }
+        Object currentBackAnimation = readField(edgeBackGestureHandler, "mBackAnimation");
+        if (currentBackAnimation == backAnimation) {
+            ensureBackInputInstalledFromHandler(edgeBackGestureHandler,
+                    "ownerAnchor:" + reason);
+            return;
+        }
+        Method setBackAnimation = edgeBackGestureHandler.getClass().getMethod(
+                "setBackAnimation", requireSystemUiPlatformImpl()
+                        .backAnimationParameterClass(
+                                edgeBackGestureHandler.getClass().getClassLoader()));
+        setBackAnimation.setAccessible(true);
+        setBackAnimation.invoke(edgeBackGestureHandler, backAnimation);
+        moduleLog(Log.INFO, TAG, "Anchored back input to native NavigationBar owner"
+                + ", controller=" + shortObject(controller)
+                + ", handler=" + shortObject(edgeBackGestureHandler)
+                + ", backAnimation=" + shortObject(backAnimation)
+                + ", replaced=" + shortObject(currentBackAnimation)
+                + ", reason=" + reason);
     }
 
     protected Object headlessUpdaterResult(Object proxy, Method method, Object[] args) {
