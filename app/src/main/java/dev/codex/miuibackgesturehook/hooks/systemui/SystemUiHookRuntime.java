@@ -82,6 +82,12 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
     private final Handler launcherConnectionHandler = new Handler(Looper.getMainLooper());
     private volatile SharedPreferences contextualSearchStatePreferences;
     private volatile Context contextualSearchStateContext;
+    /**
+     * Last logged headless NavigationBar decline vector, main-thread confined. Repeated
+     * reconciles with an unchanged vector stay quiet so boot-time triggers cannot spam
+     * the module log; the first decline and every state change still leave evidence.
+     */
+    private String lastHeadlessNavBarDeclineState;
     private final SharedPreferences.OnSharedPreferenceChangeListener
             contextualSearchStatePreferenceListener = (preferences, key) -> {
         if (!PredictiveBackPreferences.KEY_CONTEXTUAL_SEARCH_LONG_PRESS
@@ -1749,9 +1755,22 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                     && fsgMode
                     && hideGestureLine
                     && !flipTinyScreen
-                    && systemHasNavigationBar
                     && !hasNativeOwner
                     && backAnimation != null;
+            if (headlessDesired && !systemHasNavigationBar) {
+                // HyperOS 3.0.319 answers hasNavigationBar(default display) with false
+                // on FSG phones, and that same answer is what suppresses Xiaomi's own
+                // AOSP NavigationBar in createNavigationBar. Requiring the platform's
+                // bar admission here vetoed the lease exactly in the state it exists
+                // for: a gesture phone without any AOSP NavigationBar. The lease adds
+                // no window and claims side input only behind the authenticated
+                // accepted-DOWN arbiter grant, so keep attaching and record the
+                // platform answer for diagnosis instead of silently declining.
+                moduleLog(Log.INFO, TAG, "Headless SystemUI NavigationBar eligible"
+                        + " without platform nav-bar admission"
+                        + ", systemHasNavigationBar=false"
+                        + ", reason=" + reason);
+            }
 
             HeadlessNavBarLease existing;
             synchronized (headlessNavBarLifecycleLock) {
@@ -1821,6 +1840,9 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                 }
             }
             if (!headlessDesired) {
+                logHeadlessNavBarDecline(displayId, navigationMode, fsgMode,
+                        hideGestureLine, flipTinyScreen, systemHasNavigationBar,
+                        hasNativeOwner, backAnimation != null, reason);
                 return;
             }
             attachHeadlessNavBarLease(controller, navBarHelper,
@@ -1830,6 +1852,35 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                     + ", controller=" + shortObject(controller)
                     + ", reason=" + reason, throwable);
         }
+    }
+
+    /**
+     * Logs why the headless NavigationBar lease is not desired. The reconciler used to
+     * return silently here, which left HyperOS gesture-phone boots undiagnosable when a
+     * single gate turned out false. Main-thread confined; an unchanged condition vector
+     * is logged only once so repeated triggers stay quiet.
+     */
+    protected void logHeadlessNavBarDecline(int displayId, int navigationMode,
+                                            boolean fsgMode, boolean hideGestureLine,
+                                            boolean flipTinyScreen,
+                                            boolean systemHasNavigationBar,
+                                            boolean hasNativeOwner,
+                                            boolean hasBackAnimation, String reason) {
+        String state = "displayId=" + displayId
+                + ", mode=" + navigationMode
+                + ", fsgMode=" + fsgMode
+                + ", hideGestureLine=" + hideGestureLine
+                + ", flipTinyScreen=" + flipTinyScreen
+                + ", systemHasNavigationBar=" + systemHasNavigationBar
+                + ", hasNativeOwner=" + hasNativeOwner
+                + ", hasBackAnimation=" + hasBackAnimation;
+        if (state.equals(lastHeadlessNavBarDeclineState)) {
+            return;
+        }
+        lastHeadlessNavBarDeclineState = state;
+        moduleLog(Log.INFO, TAG, "Headless SystemUI NavigationBar not desired"
+                + ", " + state
+                + ", reason=" + reason);
     }
 
     protected boolean isCurrentHeadlessNavBarLifecycle(Object edgeBackGestureHandler) {
@@ -1943,6 +1994,7 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                 }
                 headlessNavBarLease = lease;
             }
+            lastHeadlessNavBarDeclineState = null;
             moduleLog(Log.INFO, TAG, "Attached headless SystemUI NavigationBar lifecycle"
                     + ", controller=" + shortObject(controller)
                     + ", helper=" + shortObject(navBarHelper)
@@ -2339,6 +2391,13 @@ public abstract class SystemUiHookRuntime extends SystemUiBarFollowRuntime {
                     .intercept(this::replaceAospBackPanelHaptic));
             moduleLog(Log.INFO, TAG,
                     "Hooked AOSP back-panel threshold haptic replacement");
+        } catch (NoSuchMethodException expected) {
+            // HyperOS 3.0.319 (SystemUI 16.03.251211) drops VibratorHelper
+            // .performHapticFeedback(View, int) entirely; the View-boundary
+            // replacement below remains the supported path on those builds.
+            moduleLog(Log.INFO, TAG,
+                    "Xiaomi removed VibratorHelper.performHapticFeedback;"
+                            + " View-boundary back-panel haptic replacement remains");
         } catch (Throwable throwable) {
             moduleLog(Log.WARN, TAG,
                     "Failed to hook AOSP back-panel activation haptic; native effect remains",
