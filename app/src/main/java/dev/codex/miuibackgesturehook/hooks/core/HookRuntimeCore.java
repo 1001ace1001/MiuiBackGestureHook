@@ -136,6 +136,8 @@ public abstract class HookRuntimeCore extends XposedModule {
             "com.android.systemui.recents.MiuiOverviewProxy";
     protected static final String MIUI_HOME_GESTURE_STUB =
             "com.miui.home.recents.GestureStubView";
+    protected static final String MIUI_HOME_NAV_STUB_VIEW =
+            "com.miui.home.recents.NavStubView";
     protected static final String MIUI_HOME_GESTURE_PROCESSOR =
             "com.miui.home.recents.GesturesBackTouchProcessor";
     protected static final String MIUI_HOME_RECENTS_CONTAINER =

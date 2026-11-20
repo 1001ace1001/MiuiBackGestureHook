@@ -676,6 +676,22 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                 if (!oldHookIds.contains("miui_home_gesture_stub_show")) {
                     hookMiuiHomeGestureStubShow(gestureStubClass);
                 }
+                if (!oldHookIds.contains("miui_home_navstub_hidden_line_update_touchable")
+                        || !oldHookIds.contains(
+                        "miui_home_navstub_hidden_line_update_screen_size")) {
+                    try {
+                        hookMiuiHomeNavStubHiddenLineState(
+                                hotReloadClassLoader,
+                                !oldHookIds.contains(
+                                        "miui_home_navstub_hidden_line_update_touchable"),
+                                !oldHookIds.contains(
+                                        "miui_home_navstub_hidden_line_update_screen_size"));
+                    } catch (Throwable throwable) {
+                        moduleLog(Log.WARN, TAG,
+                                "MiuiHome NavStub hidden-line repair unavailable",
+                                throwable);
+                    }
+                }
                 if (!oldHookIds.contains("miui_home_gesture_input_arbiter")) {
                     Class<?> processorClass = Class.forName(
                             MIUI_HOME_GESTURE_PROCESSOR, false, hotReloadClassLoader);
@@ -961,6 +977,10 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                 return this::customizeMiuiHomeGestureStubTriggerTouchRegion;
             case "miui_home_gesture_stub_show":
                 return this::restoreMiuiHomeGestureStubShow;
+            case "miui_home_navstub_hidden_line_update_touchable":
+                return this::repairMiuiHomeNavStubHiddenLineBeforeUpdateTouchable;
+            case "miui_home_navstub_hidden_line_update_screen_size":
+                return this::repairMiuiHomeNavStubHiddenLineAfterUpdateScreenSize;
             case "miui_home_gesture_input_arbiter":
                 return this::arbitrateMiuiHomeAcceptedInput;
             case "miui_home_recents_actual_state_v2":
@@ -1368,6 +1388,13 @@ public abstract class HotReloadHookRuntime extends SystemServerHookRuntime {
                         throwable);
             }
             hookMiuiHomeGestureStubShow(gestureStubClass);
+            try {
+                hookMiuiHomeNavStubHiddenLineState(classLoader, true, true);
+            } catch (Throwable throwable) {
+                moduleLog(Log.WARN, TAG,
+                        "MiuiHome NavStub hidden-line repair unavailable",
+                        throwable);
+            }
             Class<?> processorClass = Class.forName(
                     MIUI_HOME_GESTURE_PROCESSOR, false, classLoader);
             hookMiuiHomeGestureInputArbiter(processorClass, gestureStubClass);

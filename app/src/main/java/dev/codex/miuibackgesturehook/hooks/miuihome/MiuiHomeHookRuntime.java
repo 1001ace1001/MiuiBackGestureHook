@@ -33,6 +33,7 @@ import android.window.IRemoteTransitionFinishedCallback;
 import android.window.TransitionInfo;
 
 import java.lang.reflect.Array;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -4255,5 +4256,110 @@ public abstract class MiuiHomeHookRuntime extends MiuiHomeReturnHomeRuntime {
             moduleLog(Log.WARN, TAG, "Failed to restore MiuiHome gesture-stub window", throwable);
         }
         return result;
+    }
+
+    protected volatile Field miuiHomeNavStubHideGestureLineField;
+    protected volatile boolean miuiHomeNavStubHiddenLineRepairFailureLogged;
+
+    protected boolean isMiuiHomeNavStubHiddenLineRepairEnabled() {
+        try {
+            SharedPreferences preferences = modulePreferences();
+            boolean enabled = preferences.getBoolean(
+                    PredictiveBackPreferences.KEY_NAVSTUB_HIDDEN_LINE_REPAIR,
+                    PredictiveBackPreferences.DEFAULT_NAVSTUB_HIDDEN_LINE_REPAIR);
+            miuiHomeNavStubHiddenLineRepairFailureLogged = false;
+            return enabled;
+        } catch (Throwable throwable) {
+            if (!miuiHomeNavStubHiddenLineRepairFailureLogged) {
+                miuiHomeNavStubHiddenLineRepairFailureLogged = true;
+                moduleLog(Log.WARN, TAG,
+                        "Failed to read MiuiHome NavStub repair preference",
+                        throwable);
+            }
+            return PredictiveBackPreferences.DEFAULT_NAVSTUB_HIDDEN_LINE_REPAIR;
+        }
+    }
+
+    protected void enforceMiuiHomeNavStubHiddenLineState(
+            Object navStubView, String source) {
+        if (!(navStubView instanceof View)) {
+            return;
+        }
+        try {
+            Field field = miuiHomeNavStubHideGestureLineField;
+            if (field == null
+                    || field.getDeclaringClass() != navStubView.getClass()) {
+                field = navStubView.getClass().getDeclaredField("mHideGestureLine");
+                field.setAccessible(true);
+                miuiHomeNavStubHideGestureLineField = field;
+            }
+            if (!field.getBoolean(navStubView)) {
+                field.setBoolean(navStubView, true);
+                moduleLog(Log.INFO, TAG,
+                        "Repaired MiuiHome NavStub hidden-line state"
+                                + ", source=" + source);
+            }
+        } catch (Throwable throwable) {
+            moduleLog(Log.WARN, TAG,
+                    "Failed to repair MiuiHome NavStub hidden-line state",
+                    throwable);
+        }
+    }
+
+    protected Object repairMiuiHomeNavStubHiddenLineBeforeUpdateTouchable(
+            XposedInterface.Chain chain) throws Throwable {
+        if (isMiuiHomeNavStubHiddenLineRepairEnabled()) {
+            enforceMiuiHomeNavStubHiddenLineState(
+                    chain.getThisObject(), "updateTouchable");
+        }
+        return chain.proceed();
+    }
+
+    protected Object repairMiuiHomeNavStubHiddenLineAfterUpdateScreenSize(
+            XposedInterface.Chain chain) throws Throwable {
+        Object result = chain.proceed();
+        if (isMiuiHomeNavStubHiddenLineRepairEnabled()) {
+            enforceMiuiHomeNavStubHiddenLineState(
+                    chain.getThisObject(), "updateScreenSize");
+        }
+        return result;
+    }
+
+    protected void hookMiuiHomeNavStubHiddenLineState(
+            ClassLoader classLoader,
+            boolean hookUpdateTouchable,
+            boolean hookUpdateScreenSize)
+            throws ClassNotFoundException, NoSuchMethodException {
+        Class<?> navStubClass = Class.forName(MIUI_HOME_NAV_STUB_VIEW, false,
+                classLoader);
+        boolean installed = false;
+        if (hookUpdateTouchable) {
+            Method method = navStubClass.getDeclaredMethod("updateTouchable");
+            method.setAccessible(true);
+            recordHookHandle(hook(method)
+                    .setId("miui_home_navstub_hidden_line_update_touchable")
+                    .intercept(this::repairMiuiHomeNavStubHiddenLineBeforeUpdateTouchable));
+            installed = true;
+        }
+        if (hookUpdateScreenSize) {
+            try {
+                Method method = navStubClass.getDeclaredMethod("updateScreenSize");
+                method.setAccessible(true);
+                recordHookHandle(hook(method)
+                        .setId("miui_home_navstub_hidden_line_update_screen_size")
+                        .intercept(
+                                this::repairMiuiHomeNavStubHiddenLineAfterUpdateScreenSize));
+                installed = true;
+            } catch (NoSuchMethodException ignored) {
+                // Launchers without updateScreenSize still repair through the
+                // updateTouchable choke point alone.
+            }
+        }
+        if (installed) {
+            moduleLog(Log.INFO, TAG,
+                    "Hooked MiuiHome NavStub hidden-line state repair"
+                            + ", updateTouchable=" + hookUpdateTouchable
+                            + ", updateScreenSize=" + hookUpdateScreenSize);
+        }
     }
 }

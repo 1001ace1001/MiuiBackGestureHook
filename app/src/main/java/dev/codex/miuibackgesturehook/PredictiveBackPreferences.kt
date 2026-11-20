@@ -73,4 +73,12 @@ object PredictiveBackPreferences {
     const val DEFAULT_GESTURE_TRIGGER_POSITION_PERCENT = 0
     const val MIN_GESTURE_TRIGGER_POSITION_PERCENT = 0
     const val MAX_GESTURE_TRIGGER_POSITION_PERCENT = 100
+
+    /** Keep MiuiHome NavStubView.mHideGestureLine true so Xiaomi's own in-app
+     *  bottom-gesture zone uses the line-hidden admission path. Enable only when
+     *  a third-party hook hides the gesture line by flipping that field, because
+     *  the launcher's NavStub insets otherwise collapse to an empty touchable
+     *  region while the navigation bar is hidden and the field reads false. */
+    const val KEY_NAVSTUB_HIDDEN_LINE_REPAIR = "navstub_hidden_line_repair"
+    const val DEFAULT_NAVSTUB_HIDDEN_LINE_REPAIR = false
 }
