@@ -32,7 +32,7 @@ providers.gradleProperty("miuixSourceDir").orNull?.let { sourceDir ->
     includeBuild(sourceDir) {
         dependencySubstitution {
             listOf(
-                "core", "ui", "shader", "squircle", "blur", "glass", "glass-icons",
+                "core", "ui", "squircle", "blur", "glass", "glass-icons", "material",
                 "preference", "icons",
             ).forEach { component ->
                 substitute(module("top.yukonga.miuix.kmp:miuix-$component-android"))
