@@ -556,6 +556,12 @@ private fun PredictiveBackSettingsScreen(
     var confirmedReturnHomeIconPreview by remember {
         mutableStateOf(PredictiveBackPreferences.DEFAULT_RETURN_HOME_ICON_PREVIEW)
     }
+    var navStubHiddenLineRepair by remember {
+        mutableStateOf(PredictiveBackPreferences.DEFAULT_NAVSTUB_HIDDEN_LINE_REPAIR)
+    }
+    var confirmedNavStubHiddenLineRepair by remember {
+        mutableStateOf(PredictiveBackPreferences.DEFAULT_NAVSTUB_HIDDEN_LINE_REPAIR)
+    }
     var moduleLogging by remember { mutableStateOf(true) }
     var confirmedModuleLogging by remember { mutableStateOf(true) }
     var fullscreenDirectBack by remember {
@@ -601,6 +607,10 @@ private fun PredictiveBackSettingsScreen(
         returnHomeIconPreview = PredictiveBackPreferences.DEFAULT_RETURN_HOME_ICON_PREVIEW
         confirmedReturnHomeIconPreview =
             PredictiveBackPreferences.DEFAULT_RETURN_HOME_ICON_PREVIEW
+        navStubHiddenLineRepair =
+            PredictiveBackPreferences.DEFAULT_NAVSTUB_HIDDEN_LINE_REPAIR
+        confirmedNavStubHiddenLineRepair =
+            PredictiveBackPreferences.DEFAULT_NAVSTUB_HIDDEN_LINE_REPAIR
         moduleLogging = PredictiveBackPreferences.DEFAULT_MODULE_LOGGING
         confirmedModuleLogging = PredictiveBackPreferences.DEFAULT_MODULE_LOGGING
         fullscreenDirectBack = PredictiveBackPreferences.DEFAULT_FULLSCREEN_DIRECT_BACK
@@ -689,6 +699,10 @@ private fun PredictiveBackSettingsScreen(
                         PredictiveBackPreferences.KEY_RETURN_HOME_ICON_PREVIEW,
                         PredictiveBackPreferences.DEFAULT_RETURN_HOME_ICON_PREVIEW,
                     ),
+                    remotePreferences.getBoolean(
+                        PredictiveBackPreferences.KEY_NAVSTUB_HIDDEN_LINE_REPAIR,
+                        PredictiveBackPreferences.DEFAULT_NAVSTUB_HIDDEN_LINE_REPAIR,
+                    ),
                 )
                 Triple(remotePreferences, flags, hapticEffect)
             }
@@ -713,6 +727,8 @@ private fun PredictiveBackSettingsScreen(
             confirmedRestoreStatusBarFollow = loaded.second[7]
             returnHomeIconPreview = loaded.second[8]
             confirmedReturnHomeIconPreview = loaded.second[8]
+            navStubHiddenLineRepair = loaded.second[9]
+            confirmedNavStubHiddenLineRepair = loaded.second[9]
         } catch (_: Throwable) {
             configurationError = configurationErrorMessage
         } finally {
@@ -897,6 +913,15 @@ private fun PredictiveBackSettingsScreen(
             { confirmedRestoreStatusBarFollow = it },
         )
     }
+    val persistNavStubHiddenLineRepair: (Boolean) -> Unit = { requestedEnabled ->
+        persistBooleanPreference(
+            PredictiveBackPreferences.KEY_NAVSTUB_HIDDEN_LINE_REPAIR,
+            requestedEnabled,
+            { navStubHiddenLineRepair = it },
+            { confirmedNavStubHiddenLineRepair },
+            { confirmedNavStubHiddenLineRepair = it },
+        )
+    }
     val statusMessage = when {
         configurationLoading -> SettingsStatusCardMessage(
             text = serviceLoadingMessage,
@@ -1033,6 +1058,16 @@ private fun PredictiveBackSettingsScreen(
                                 .padding(bottom = 12.dp),
                         )
                     }
+                }
+                item(key = "navstub_hidden_line_repair") {
+                    NavStubHiddenLineRepairCard(
+                        enabled = navStubHiddenLineRepair,
+                        configurationEnabled = configurationEnabled,
+                        onToggle = persistNavStubHiddenLineRepair,
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp)
+                            .padding(bottom = 8.dp),
+                    )
                 }
                 item(key = "app_list_navigation") {
                     AppListNavigationCard(
@@ -1291,6 +1326,27 @@ private fun ModuleLoggingCard(
             checked = moduleLogging,
             enabled = configurationEnabled,
             onCheckedChange = onModuleLoggingToggle,
+        )
+    }
+}
+
+@Composable
+private fun NavStubHiddenLineRepairCard(
+    enabled: Boolean,
+    configurationEnabled: Boolean,
+    onToggle: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(0.dp),
+    ) {
+        SwitchPreference(
+            title = stringResource(R.string.navstub_hidden_line_repair_title),
+            summary = stringResource(R.string.navstub_hidden_line_repair_summary),
+            checked = enabled,
+            enabled = configurationEnabled,
+            onCheckedChange = onToggle,
         )
     }
 }
