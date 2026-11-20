@@ -1575,6 +1575,7 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                 return false;
             }
             if (!isNativeBackInputActive()) {
+                logNativeBackInputInactive();
                 return false;
             }
             ComponentName topActivity = findTopActivity();
@@ -1827,15 +1828,23 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
 
         protected boolean isNativeBackInputActive() {
             try {
+                // mDisabledForQuickstep is deliberately not consulted here. Xiaomi's
+                // portrait-locked launcher reports its prioritized rotation persistently
+                // through LauncherProxyService, so on HyperOS 3.0.319 the quickstep
+                // rotation veto latches true for the whole landscape session and would
+                // silently kill every landscape back gesture. The AOSP veto protects an
+                // in-flight launcher rotation transition; the accepted-token model
+                // already makes MiuiHome's own stub the only pilot for any claimed
+                // stream, so the conflicting-transition scenario this veto guards cannot
+                // occur through this monitor. The field value is still captured for the
+                // DOWN diagnostics in canStartBackGesture.
                 if (!Boolean.TRUE.equals(readField(edgeBackGestureHandler, "mIsAttached"))
                         || !Boolean.TRUE.equals(
                         readField(edgeBackGestureHandler, "mInGestureNavMode"))
                         || !Boolean.TRUE.equals(
                         readField(edgeBackGestureHandler, "mIsBackGestureAllowed"))
                         || Boolean.TRUE.equals(
-                        readField(edgeBackGestureHandler, "mUsingThreeButtonNav"))
-                        || Boolean.TRUE.equals(
-                        readField(edgeBackGestureHandler, "mDisabledForQuickstep"))) {
+                        readField(edgeBackGestureHandler, "mUsingThreeButtonNav"))) {
                     return false;
                 }
                 try {
@@ -1852,6 +1861,43 @@ public abstract class SystemUiInputRuntime extends HookRuntimeCore {
                 return true;
             } catch (Throwable ignored) {
                 return false;
+            }
+        }
+
+        /**
+         * Down-time diagnostics for the handler lifecycle gates that silently decline the
+         * driver. The quickstep-rotation veto is included so a latched landscape state is
+         * visible in device captures instead of surfacing as an unexplained dead gesture.
+         */
+        protected void logNativeBackInputInactive() {
+            try {
+                Object disabledForQuickstep = null;
+                Object startingQuickstepRotation = null;
+                Object windowRotation = null;
+                try {
+                    disabledForQuickstep = readField(
+                            edgeBackGestureHandler, "mDisabledForQuickstep");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    startingQuickstepRotation = readField(
+                            edgeBackGestureHandler, "mStartingQuickstepRotation");
+                } catch (Throwable ignored) {
+                }
+                try {
+                    Object windowConfiguration = readField(
+                            readField(edgeBackGestureHandler, "mLastReportedConfig"),
+                            "windowConfiguration");
+                    windowRotation = invokeAnyMethod(
+                            windowConfiguration, "getRotation", new Object[0]);
+                } catch (Throwable ignored) {
+                }
+                moduleLog(Log.INFO, TAG, "Native back input inactive at DOWN"
+                        + ", disabledForQuickstep=" + disabledForQuickstep
+                        + ", startingQuickstepRotation=" + startingQuickstepRotation
+                        + ", windowRotation=" + windowRotation
+                        + ", displayId=" + displayId);
+            } catch (Throwable ignored) {
             }
         }
 
